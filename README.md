@@ -1,4 +1,4 @@
-# HardwareInserter
+# SE_HardwareInserter
 
 Solid Edge add-in that inserts fasteners and anchors (`.par` files) into the active assembly,
 capturing the diameter of a selected hole and automatically applying the matching geometric
@@ -8,7 +8,7 @@ constraints.
 
 ## Installation (end user)
 
-1. Download `HardwareInserterSetup.exe` from the [Releases page](../../releases) of this
+1. Download `SE_HardwareInserterSetup.exe` from the [Releases page](../../releases) of this
    repository, or copy it from a USB drive — it's a single file, with no external dependencies
    and no internet connection required during installation.
 2. Double-click to run it. No administrator rights required (it installs under your user profile
@@ -58,9 +58,9 @@ To build the installer locally (Windows, with [Inno Setup](https://jrsoftware.or
 installed):
 
 ```powershell
-dotnet build HardwareInserter.slnx -c Release -p:Platform=x64
-ISCC.exe installer\HardwareInserter.iss
-# -> installer\Output\HardwareInserterSetup.exe
+dotnet build SE_HardwareInserter.slnx -c Release -p:Platform=x64
+ISCC.exe installer\SE_HardwareInserter.iss
+# -> installer\Output\SE_HardwareInserterSetup.exe
 ```
 
 Pushing a `vX.Y.Z` tag triggers the `.github/workflows/release.yml` workflow, which builds,
@@ -72,7 +72,7 @@ generates the installer, and publishes it as a GitHub Release asset.
 
 ---
 
-# HardwareInserter (Español)
+# SE_HardwareInserter (Español)
 
 Add-in para Solid Edge que inserta tornillería y anchors (archivos `.par`) en un ensamblaje activo,
 capturando el diámetro de un agujero seleccionado y aplicando las restricciones geométricas
@@ -80,7 +80,7 @@ correspondientes automáticamente.
 
 ## Instalación (usuario final)
 
-1. Descarga `HardwareInserterSetup.exe` desde la
+1. Descarga `SE_HardwareInserterSetup.exe` desde la
    [página de Releases](../../releases) de este repositorio, o cópialo desde un pendrive — es un
    único archivo, sin dependencias externas ni conexión a internet requerida durante la instalación.
 2. Ejecútalo con doble clic. No requiere permisos de administrador (se instala en tu perfil de
@@ -130,9 +130,9 @@ Para generar el instalador localmente (Windows, con [Inno Setup](https://jrsoftw
 instalado):
 
 ```powershell
-dotnet build HardwareInserter.slnx -c Release -p:Platform=x64
-ISCC.exe installer\HardwareInserter.iss
-# -> installer\Output\HardwareInserterSetup.exe
+dotnet build SE_HardwareInserter.slnx -c Release -p:Platform=x64
+ISCC.exe installer\SE_HardwareInserter.iss
+# -> installer\Output\SE_HardwareInserterSetup.exe
 ```
 
 Un push de un tag `vX.Y.Z` dispara el workflow `.github/workflows/release.yml`, que compila,

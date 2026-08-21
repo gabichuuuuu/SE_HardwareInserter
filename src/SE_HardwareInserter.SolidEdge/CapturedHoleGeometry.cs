@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using SolidEdgeGeometry;
 
-namespace HardwareInserter.SolidEdge
+namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>
     /// Geometría del agujero capturada desde la selección activa de Solid Edge: la cara cilíndrica

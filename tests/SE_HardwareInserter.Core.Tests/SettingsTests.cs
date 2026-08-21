@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using FluentAssertions;
-using HardwareInserter.Core.Preferences;
+using SE_HardwareInserter.Core.Preferences;
 using Xunit;
 
-namespace HardwareInserter.Core.Tests
+namespace SE_HardwareInserter.Core.Tests
 {
     public class SettingsTests : IDisposable
     {
@@ -12,7 +12,7 @@ namespace HardwareInserter.Core.Tests
 
         public SettingsTests()
         {
-            _settingsPath = Path.Combine(Path.GetTempPath(), "HardwareInserter_settings_" + Guid.NewGuid().ToString("N") + ".json");
+            _settingsPath = Path.Combine(Path.GetTempPath(), "SE_HardwareInserter_settings_" + Guid.NewGuid().ToString("N") + ".json");
         }
 
         public void Dispose()
@@ -57,7 +57,7 @@ namespace HardwareInserter.Core.Tests
             var path = Settings.GetDefaultFilePath();
 
             path.Should().EndWith("settings.json");
-            Path.GetDirectoryName(path).Should().Contain("HardwareInserter");
+            Path.GetDirectoryName(path).Should().Contain("SE_HardwareInserter");
         }
     }
 }

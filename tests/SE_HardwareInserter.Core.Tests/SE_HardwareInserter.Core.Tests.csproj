@@ -3,7 +3,7 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>HardwareInserter.Core.Tests</RootNamespace>
+    <RootNamespace>SE_HardwareInserter.Core.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\HardwareInserter.Core\HardwareInserter.Core.csproj" />
+    <ProjectReference Include="..\..\src\SE_HardwareInserter.Core\SE_HardwareInserter.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,7 +4,7 @@ using SolidEdgeAssembly;
 using SolidEdgeFramework;
 using SolidEdgeGeometry;
 
-namespace HardwareInserter.SolidEdge
+namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>
     /// Envuelve todas las llamadas a la API de Solid Edge: captura de geometría del agujero,

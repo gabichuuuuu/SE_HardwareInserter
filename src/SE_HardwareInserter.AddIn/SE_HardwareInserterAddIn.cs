@@ -1,11 +1,11 @@
 using System;
 using System.Runtime.InteropServices;
-using HardwareInserter.AddIn.UI;
-using HardwareInserter.SolidEdge;
+using SE_HardwareInserter.AddIn.UI;
+using SE_HardwareInserter.SolidEdge;
 using SolidEdgeAssembly;
 using SolidEdgeFramework;
 
-namespace HardwareInserter.AddIn
+namespace SE_HardwareInserter.AddIn
 {
     /// <summary>
     /// Add-in COM nativo de Solid Edge para la inserción de hardware (tornillería y anchors) desde
@@ -22,8 +22,8 @@ namespace HardwareInserter.AddIn
     /// </remarks>
     [ComVisible(true)]
     [Guid("DC87125A-6DBF-43A5-968B-2578CCBFC158")]
-    [ProgId("HardwareInserter.AddIn")]
-    public sealed class HardwareInserterAddIn : ISolidEdgeAddIn, IDisposable
+    [ProgId("SE_HardwareInserter.AddIn")]
+    public sealed class SE_HardwareInserterAddIn : ISolidEdgeAddIn, IDisposable
     {
         /// <summary>GUID del entorno de ensamblaje de Solid Edge (SolidEdgeSDK.EnvironmentCategories.Assembly).</summary>
         private const string AssemblyEnvCatId = "26618395-09D6-11d1-BA07-080036230602";
@@ -151,7 +151,7 @@ namespace HardwareInserter.AddIn
             var clsid = t.GUID.ToString("B");
             using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
                 $@"Software\Solid Edge\Add-Ins\{clsid}");
-            key.SetValue("Description", "HardwareInserter: inserción de tornillería y anchors desde librería local.");
+            key.SetValue("Description", "SE_HardwareInserter: inserción de tornillería y anchors desde librería local.");
             key.SetValue("Summary", "Add-in para inserción automática de hardware en ensamblajes de Solid Edge.");
             key.SetValue("Visible", 1, Microsoft.Win32.RegistryValueKind.DWord);
         }

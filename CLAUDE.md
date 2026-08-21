@@ -6,27 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Compilar toda la solución (formato .slnx, no .sln)
-dotnet build HardwareInserter.slnx
+dotnet build SE_HardwareInserter.slnx
 
 # Compilar un proyecto concreto
-dotnet build src/HardwareInserter.Core/HardwareInserter.Core.csproj
-dotnet build src/HardwareInserter.SolidEdge/HardwareInserter.SolidEdge.csproj
-dotnet build src/HardwareInserter.AddIn/HardwareInserter.AddIn.csproj -p:Platform=x64
+dotnet build src/SE_HardwareInserter.Core/SE_HardwareInserter.Core.csproj
+dotnet build src/SE_HardwareInserter.SolidEdge/SE_HardwareInserter.SolidEdge.csproj
+dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -p:Platform=x64
 
 # Ejecutar todos los tests
-dotnet test tests/HardwareInserter.Core.Tests/HardwareInserter.Core.Tests.csproj
+dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj
 
 # Ejecutar un test concreto (por nombre parcial de método)
-dotnet test tests/HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
+dotnet test tests/SE_HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
 ```
 
 > `dotnet test` requiere un testhost de .NET Framework 4.8, que no viene incluido en el SDK de
 > dotnet en Linux. Si falla con `Cannot open assembly '.../testhost.net48.exe'`, compila el
 > proyecto de tests y ejecuta el DLL resultante con Mono y el runner de xUnit:
-> `mono ~/.nuget/packages/xunit.runner.console/<version>/tools/net48/xunit.console.exe bin/Debug/net48/HardwareInserter.Core.Tests.dll`
+> `mono ~/.nuget/packages/xunit.runner.console/<version>/tools/net48/xunit.console.exe bin/Debug/net48/SE_HardwareInserter.Core.Tests.dll`
 > (instala el paquete `xunit.runner.console` temporalmente con `dotnet add package` solo para
 > esto y revierte el cambio en el `.csproj` después; no debe quedar como dependencia permanente).
-> Los tests de `HardwareInserter.SolidEdge`/`HardwareInserter.AddIn` (si se añaden en el futuro)
+> Los tests de `SE_HardwareInserter.SolidEdge`/`SE_HardwareInserter.AddIn` (si se añaden en el futuro)
 > requerirían Solid Edge real instalado, ya que dependen de la interop COM.
 
 ## Arquitectura
@@ -35,7 +35,7 @@ dotnet test tests/HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refr
 Fijado en `Directory.Build.props` para máxima compatibilidad con la interop COM de Solid Edge.
 
 **Forma de ejecución:** add-in COM registrado, NO macro/EXE standalone. Solid Edge carga el
-ensamblado `HardwareInserter.AddIn` al arrancar (registrado en
+ensamblado `SE_HardwareInserter.AddIn` al arrancar (registrado en
 `HKCU\Software\Solid Edge\Add-Ins\{CLSID}`) e invoca `ISolidEdgeAddIn.OnConnection`, recibiendo la
 instancia de `Application` directamente (sin `Marshal.GetActiveObject`). El add-in registra un
 botón en la ribbon del entorno de ensamblaje; al pulsarlo, abre el diálogo WPF no modal
@@ -45,10 +45,10 @@ botón en la ribbon del entorno de ensamblaje; al pulsarlo, abre el diálogo WPF
 
 | Proyecto | Responsabilidad |
 |---|---|
-| `HardwareInserter.Core` | Modelos (`LibraryItem`), librería de hardware basada en FS (`FileSystemFastenerLibrary` con `FileSystemWatcher`), preferencias (`Settings`/`JsonSettingsStore` en `%AppData%`). Sin dependencia de COM. |
-| `HardwareInserter.SolidEdge` | Toda la interop con `Interop.SolidEdge`: captura de geometría e inserción/restricciones (`SolidEdgeHelper`), resolución de caras del tornillo (`IScrewGeometryResolver`), gestión de archivos `.par` (`HardwareFileManager`). |
-| `HardwareInserter.AddIn` | Add-in COM (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registrado en HKCU con `regasm /codebase`. `ComRegisterFunction`/`ComUnregisterFunction` escriven/borran la subclave de Solid Edge. |
-| `HardwareInserter.Core.Tests` | Tests xUnit + FluentAssertions de `FileSystemFastenerLibrary` y `Settings`. Sin COM. |
+| `SE_HardwareInserter.Core` | Modelos (`LibraryItem`), librería de hardware basada en FS (`FileSystemFastenerLibrary` con `FileSystemWatcher`), preferencias (`Settings`/`JsonSettingsStore` en `%AppData%`). Sin dependencia de COM. |
+| `SE_HardwareInserter.SolidEdge` | Toda la interop con `Interop.SolidEdge`: captura de geometría e inserción/restricciones (`SolidEdgeHelper`), resolución de caras del tornillo (`IScrewGeometryResolver`), gestión de archivos `.par` (`HardwareFileManager`). |
+| `SE_HardwareInserter.AddIn` | Add-in COM (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registrado en HKCU con `regasm /codebase`. `ComRegisterFunction`/`ComUnregisterFunction` escriven/borran la subclave de Solid Edge. |
+| `SE_HardwareInserter.Core.Tests` | Tests xUnit + FluentAssertions de `FileSystemFastenerLibrary` y `Settings`. Sin COM. |
 
 ### Flujo de la UI (`HardwarePickerWindow`)
 
@@ -92,7 +92,7 @@ botón en la ribbon del entorno de ensamblaje; al pulsarlo, abre el diálogo WPF
 
 El catálogo se construye dinámicamente escaneando una carpeta local recursivamente en busca de
 `*.par`. No hay índice JSON ni importación Excel. La carpeta raíz la configura el usuario con el
-botón "Carpeta..." y se persiste en `%AppData%\HardwareInserter\settings.json` (solo `RootPath`).
+botón "Carpeta..." y se persiste en `%AppData%\SE_HardwareInserter\settings.json` (solo `RootPath`).
 Un `FileSystemWatcher` mantiene el árbol vivo: añadir un `.par` a la carpeta lo hace aparecer sin
 reiniciar Solid Edge. Cada `.par` se muestra tal cual (sin parseo de nombre); `Category` = nombre
 de la subcarpeta inmediata, `Filename` = nombre del archivo con extensión.

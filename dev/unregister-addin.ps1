@@ -1,6 +1,6 @@
-# Unregister-HardwareInserter.ps1
+# Unregister-SE_HardwareInserter.ps1
 #
-# Desregistra el add-in HardwareInserter.AddIn de Solid Edge.
+# Desregistra el add-in SE_HardwareInserter.AddIn de Solid Edge.
 # Borra el CLSID de HKCU y la subclave HKCU\Software\Solid Edge\Add-Ins\{CLSID}.
 #
 # Uso:
@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$addinDll = Join-Path $repoRoot "src\HardwareInserter.AddIn\bin\$Config\net48\HardwareInserter.AddIn.dll"
+$addinDll = Join-Path $repoRoot "src\SE_HardwareInserter.AddIn\bin\$Config\net48\SE_HardwareInserter.AddIn.dll"
 
 $regasm = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
 if (-not (Test-Path $regasm)) {

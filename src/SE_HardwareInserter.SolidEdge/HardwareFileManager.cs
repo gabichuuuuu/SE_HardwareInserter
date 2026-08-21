@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace HardwareInserter.SolidEdge
+namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>
     /// Gestiona la carpeta local "Hardware" (junto al ensamblaje activo) donde se copian

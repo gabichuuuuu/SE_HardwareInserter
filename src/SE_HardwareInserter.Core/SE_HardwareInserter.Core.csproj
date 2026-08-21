@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>HardwareInserter.Core</RootNamespace>
-    <AssemblyName>HardwareInserter.Core</AssemblyName>
+    <RootNamespace>SE_HardwareInserter.Core</RootNamespace>
+    <AssemblyName>SE_HardwareInserter.Core</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

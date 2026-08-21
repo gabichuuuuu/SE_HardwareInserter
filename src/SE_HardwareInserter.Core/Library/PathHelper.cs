@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 
-namespace HardwareInserter.Core.Library
+namespace SE_HardwareInserter.Core.Library
 {
     /// <summary>
     /// Utilidades de ruta para net48, que no dispone de <c>Path.GetRelativePath</c> (añadido en .NET Core 2.1).

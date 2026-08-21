@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace HardwareInserter.SolidEdge
+namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>
     /// Envuelve un objeto COM en un <see cref="System.IDisposable"/> para poder liberarlo

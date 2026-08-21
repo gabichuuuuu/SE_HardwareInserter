@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using SolidEdgeAssembly;
 using SolidEdgeGeometry;
 
-namespace HardwareInserter.SolidEdge
+namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>
     /// Implementación por defecto de <see cref="IScrewGeometryResolver"/>: asume que todas las

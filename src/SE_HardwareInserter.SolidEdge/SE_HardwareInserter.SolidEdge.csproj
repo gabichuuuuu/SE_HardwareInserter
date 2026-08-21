@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>HardwareInserter.SolidEdge</RootNamespace>
-    <AssemblyName>HardwareInserter.SolidEdge</AssemblyName>
+    <RootNamespace>SE_HardwareInserter.SolidEdge</RootNamespace>
+    <AssemblyName>SE_HardwareInserter.SolidEdge</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HardwareInserter.Core\HardwareInserter.Core.csproj" />
+    <ProjectReference Include="..\SE_HardwareInserter.Core\SE_HardwareInserter.Core.csproj" />
   </ItemGroup>
 
   <!--

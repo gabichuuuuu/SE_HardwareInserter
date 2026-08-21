@@ -25,30 +25,30 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Run Core tests
-        run: dotnet test tests/HardwareInserter.Core.Tests/HardwareInserter.Core.Tests.csproj -c Release
+        run: dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj -c Release
 
       - name: Build add-in (Release x64)
         # The .slnx has no "Release|x64" solution-level configuration (Core/Tests are AnyCPU,
         # only AddIn/SolidEdge are x64), so build the AddIn project directly — same as
         # dev/register-addin.ps1. Its ProjectReferences pull in Core and SolidEdge transitively.
-        run: dotnet build src/HardwareInserter.AddIn/HardwareInserter.AddIn.csproj -c Release -p:Platform=x64
+        run: dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -c Release -p:Platform=x64
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
       - name: Compile installer
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\HardwareInserter.iss'
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\SE_HardwareInserter.iss'
         shell: pwsh
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HardwareInserterSetup
-          path: installer\Output\HardwareInserterSetup.exe
+          name: SE_HardwareInserterSetup
+          path: installer\Output\SE_HardwareInserterSetup.exe
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: installer\Output\HardwareInserterSetup.exe
+          files: installer\Output\SE_HardwareInserterSetup.exe
           generate_release_notes: true

@@ -4,8 +4,8 @@
     <OutputType>Library</OutputType>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <RootNamespace>HardwareInserter.AddIn</RootNamespace>
-    <AssemblyName>HardwareInserter.AddIn</AssemblyName>
+    <RootNamespace>SE_HardwareInserter.AddIn</RootNamespace>
+    <AssemblyName>SE_HardwareInserter.AddIn</AssemblyName>
 
     <!-- Add-in COM: Visible a COM y registrable con regasm. -->
     <ComVisible>true</ComVisible>
@@ -16,8 +16,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HardwareInserter.Core\HardwareInserter.Core.csproj" />
-    <ProjectReference Include="..\HardwareInserter.SolidEdge\HardwareInserter.SolidEdge.csproj" />
+    <ProjectReference Include="..\SE_HardwareInserter.Core\SE_HardwareInserter.Core.csproj" />
+    <ProjectReference Include="..\SE_HardwareInserter.SolidEdge\SE_HardwareInserter.SolidEdge.csproj" />
   </ItemGroup>
 
   <ItemGroup>

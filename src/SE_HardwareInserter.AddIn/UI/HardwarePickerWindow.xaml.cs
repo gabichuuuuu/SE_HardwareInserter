@@ -4,12 +4,12 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using HardwareInserter.Core.Library;
-using HardwareInserter.Core.Preferences;
-using HardwareInserter.SolidEdge;
+using SE_HardwareInserter.Core.Library;
+using SE_HardwareInserter.Core.Preferences;
+using SE_HardwareInserter.SolidEdge;
 using SolidEdgeFramework;
 
-namespace HardwareInserter.AddIn.UI
+namespace SE_HardwareInserter.AddIn.UI
 {
     /// <summary>
     /// Diálogo WPF no modal del add-in. Muestra el árbol de la librería de hardware (archivos

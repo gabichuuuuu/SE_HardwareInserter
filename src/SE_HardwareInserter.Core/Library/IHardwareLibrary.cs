@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace HardwareInserter.Core.Library
+namespace SE_HardwareInserter.Core.Library
 {
     /// <summary>
     /// Entrada de la librería de hardware descubierta escaneando el sistema de archivos:

@@ -7,17 +7,17 @@ see `CLAUDE.md` (verified accurate against source).
 
 ```bash
 # Build whole solution (note: .slnx format, not .sln)
-dotnet build HardwareInserter.slnx
+dotnet build SE_HardwareInserter.slnx
 
 # Build a single project
-dotnet build src/HardwareInserter.Core/HardwareInserter.Core.csproj
-dotnet build src/HardwareInserter.AddIn/HardwareInserter.AddIn.csproj -p:Platform=x64
+dotnet build src/SE_HardwareInserter.Core/SE_HardwareInserter.Core.csproj
+dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -p:Platform=x64
 
 # Run all tests
-dotnet test tests/HardwareInserter.Core.Tests/HardwareInserter.Core.Tests.csproj
+dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj
 
 # Run a single test by partial method name
-dotnet test tests/HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
+dotnet test tests/SE_HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
 ```
 
 ## Register/unregister the add-in (Windows, PowerShell)
@@ -37,9 +37,9 @@ dotnet test tests/HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refr
   Pinned to net48 for Solid Edge COM interop compatibility — do not bump.
 - **`Nullable` is `enable` AND `WarningsAsErrors` for `Nullable`** (`Directory.Build.props`).
   Any nullability warning fails the build. Wire nullability annotations correctly on every change.
-- **Solution file is `.slnx`** (XML-based sln format), not `.sln`. Always pass `HardwareInserter.slnx`.
-- **`Interop.SolidEdge` uses `EmbedInteropTypes=false`** in `HardwareInserter.SolidEdge` and
-  `HardwareInserter.AddIn`: the `Interop.SolidEdge.dll` from NuGet is copied to the output directory
+- **Solution file is `.slnx`** (XML-based sln format), not `.sln`. Always pass `SE_HardwareInserter.slnx`.
+- **`Interop.SolidEdge` uses `EmbedInteropTypes=false`** in `SE_HardwareInserter.SolidEdge` and
+  `SE_HardwareInserter.AddIn`: the `Interop.SolidEdge.dll` from NuGet is copied to the output directory
   and distributed with the add-in. This is required because `EmbedInteropTypes=true` does not
   generate .NET event wrappers for COM source interfaces (`ISEAddInEvents`), so `+=` on
   `AddInEventsClass.OnCommand` fails with `CS1656`. With `false`, the full interop DLL (including
@@ -55,20 +55,20 @@ then run it under Mono with the xUnit console runner:
 
 ```bash
 mono ~/.nuget/packages/xunit.runner.console/<version>/tools/net48/xunit.console.exe \
-  tests/HardwareInserter.Core.Tests/bin/Debug/net48/HardwareInserter.Core.Tests.dll
+  tests/SE_HardwareInserter.Core.Tests/bin/Debug/net48/SE_HardwareInserter.Core.Tests.dll
 ```
 
 `xunit.runner.console` is NOT a project dependency — it is already in the NuGet cache from a prior
 `dotnet add package` on the test project (then reverted). If missing, add it temporarily, run,
 then revert the `.csproj` change. Never leave it as a permanent dependency.
 
-There are no tests for `HardwareInserter.SolidEdge` or `HardwareInserter.AddIn` and there cannot be
+There are no tests for `SE_HardwareInserter.SolidEdge` or `SE_HardwareInserter.AddIn` and there cannot be
 without a real Solid Edge installation (COM interop). Do not attempt to add unit tests that touch
 `SolidEdge.*` types.
 
 ## Architecture: COM add-in (not a standalone macro)
 
-`HardwareInserter.AddIn` is a **registered COM add-in**, NOT a standalone EXE. Solid Edge loads it
+`SE_HardwareInserter.AddIn` is a **registered COM add-in**, NOT a standalone EXE. Solid Edge loads it
 on startup via `ISolidEdgeAddIn.OnConnection` and calls `OnCommand` when the user clicks the ribbon
 button. The add-in opens a WPF `HardwarePickerWindow` (non-modal) that floats over Solid Edge.
 
@@ -131,16 +131,16 @@ method**. Calling it as `Faces(...)` triggers `CS1955`. Index it with `[]`.
 
 | Project | Role | COM? |
 |---|---|---|
-| `HardwareInserter.Core` | Models, FS-based hardware library (`FileSystemFastenerLibrary`), settings (`Settings`/`JsonSettingsStore`) | No |
-| `HardwareInserter.SolidEdge` | COM interop: geometry capture, insertion/constraints, `.par` file management | Yes |
-| `HardwareInserter.AddIn` | COM add-in (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registered in HKCU. | Yes |
-| `HardwareInserter.Core.Tests` | xUnit + FluentAssertions, Core only | No |
+| `SE_HardwareInserter.Core` | Models, FS-based hardware library (`FileSystemFastenerLibrary`), settings (`Settings`/`JsonSettingsStore`) | No |
+| `SE_HardwareInserter.SolidEdge` | COM interop: geometry capture, insertion/constraints, `.par` file management | Yes |
+| `SE_HardwareInserter.AddIn` | COM add-in (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registered in HKCU. | Yes |
+| `SE_HardwareInserter.Core.Tests` | xUnit + FluentAssertions, Core only | No |
 
 ### Catalog: filesystem scanning (no JSON/Excel)
 
 The catalog is built dynamically by `FileSystemFastenerLibrary` scanning a local folder recursively
 for `*.par` files. No JSON index, no Excel import. The folder root is configured by the user via
-the "Carpeta..." button and persisted in `%AppData%\HardwareInserter\settings.json` (only `RootPath`).
+the "Carpeta..." button and persisted in `%AppData%\SE_HardwareInserter\settings.json` (only `RootPath`).
 A `FileSystemWatcher` keeps the tree live: adding a `.par` to the folder makes it appear without
 restarting Solid Edge. Each `.par` is shown as-is (no name parsing); `Category` = immediate
 subfolder name, `Filename` = file name with extension.

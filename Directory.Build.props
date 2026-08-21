@@ -1,6 +1,6 @@
 <Project>
   <!--
-    Propiedades comunes a todos los proyectos de la solución HardwareInserter.
+    Propiedades comunes a todos los proyectos de la solución SE_HardwareInserter.
     Réplica de la convención usada en CadLinter/Directory.Build.props.
   -->
 

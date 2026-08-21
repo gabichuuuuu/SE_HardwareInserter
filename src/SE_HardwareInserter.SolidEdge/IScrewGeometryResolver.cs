@@ -1,6 +1,6 @@
 using SolidEdgeAssembly;
 
-namespace HardwareInserter.SolidEdge
+namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>Caras resueltas de un tornillo recién insertado, necesarias para las restricciones 3D.</summary>
     public sealed class ScrewGeometryFaces

@@ -3,10 +3,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using FluentAssertions;
-using HardwareInserter.Core.Library;
+using SE_HardwareInserter.Core.Library;
 using Xunit;
 
-namespace HardwareInserter.Core.Tests
+namespace SE_HardwareInserter.Core.Tests
 {
     public class FileSystemFastenerLibraryTests : IDisposable
     {
@@ -14,7 +14,7 @@ namespace HardwareInserter.Core.Tests
 
         public FileSystemFastenerLibraryTests()
         {
-            _root = Path.Combine(Path.GetTempPath(), "HardwareInserterTests_" + Guid.NewGuid().ToString("N"));
+            _root = Path.Combine(Path.GetTempPath(), "SE_HardwareInserterTests_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_root);
         }
 
@@ -101,7 +101,7 @@ namespace HardwareInserter.Core.Tests
             lib.Refresh();
             lib.Items.Should().HaveCount(1);
 
-            var otraRaiz = Path.Combine(Path.GetTempPath(), "HardwareInserterTests_otra_" + Guid.NewGuid().ToString("N"));
+            var otraRaiz = Path.Combine(Path.GetTempPath(), "SE_HardwareInserterTests_otra_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(otraRaiz);
             try
             {

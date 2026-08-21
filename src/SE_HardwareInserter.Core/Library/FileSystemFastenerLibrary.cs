@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace HardwareInserter.Core.Library
+namespace SE_HardwareInserter.Core.Library
 {
     /// <summary>
     /// Implementación de <see cref="IHardwareLibrary"/> que descubre los <c>.par</c> recorriendo

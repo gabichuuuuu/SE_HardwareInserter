@@ -1,11 +1,11 @@
 using System.IO;
 using System.Text.Json;
 
-namespace HardwareInserter.Core.Preferences
+namespace SE_HardwareInserter.Core.Preferences
 {
     /// <summary>
     /// Preferencias persistentes del add-in, almacenadas como JSON en
-    /// <c>%AppData%\HardwareInserter\settings.json</c>. De momento solo guarda la carpeta raíz
+    /// <c>%AppData%\SE_HardwareInserter\settings.json</c>. De momento solo guarda la carpeta raíz
     /// de la librería de hardware seleccionada por el usuario.
     /// </summary>
     public sealed class Settings
@@ -24,7 +24,7 @@ namespace HardwareInserter.Core.Preferences
         public static string GetDefaultFilePath()
         {
             var appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData);
-            var folder = Path.Combine(appData, "HardwareInserter");
+            var folder = Path.Combine(appData, "SE_HardwareInserter");
             return Path.Combine(folder, "settings.json");
         }
 
