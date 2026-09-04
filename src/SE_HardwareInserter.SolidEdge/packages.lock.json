@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "dependencies": {
+    ".NETFramework,Version=v4.8": {
+      "Interop.SolidEdge": {
+        "type": "Direct",
+        "requested": "[220.2.0, )",
+        "resolved": "220.2.0",
+        "contentHash": "bTYHeK3gUttKs4ncd4HYJ3nUE1AIHU6yHbgrjJR9DZqcNoY4Gs++U0E4v1GhGvA/q/SJkuXag/IYZkn/2AWFLQ=="
+      },
+      "Microsoft.NETFramework.ReferenceAssemblies": {
+        "type": "Direct",
+        "requested": "[1.0.3, )",
+        "resolved": "1.0.3",
+        "contentHash": "vUc9Npcs14QsyOD01tnv/m8sQUnGTGOw1BCmKcv77LBJY7OxhJ+zJF7UD/sCL3lYNFuqmQEVlkfS4Quif6FyYg==",
+        "dependencies": {
+          "Microsoft.NETFramework.ReferenceAssemblies.net48": "1.0.3"
+        }
+      },
+      "Microsoft.NETFramework.ReferenceAssemblies.net48": {
+        "type": "Direct",
+        "requested": "[1.0.3, )",
+        "resolved": "1.0.3",
+        "contentHash": "zMk4D+9zyiEWByyQ7oPImPN/Jhpj166Ky0Nlla4eXlNL8hI/BtSJsgR8Inldd4NNpIAH3oh8yym0W2DrhXdSLQ=="
+      },
+      "se_hardwareinserter.core": {
+        "type": "Project"
+      }
+    }
+  }
+}

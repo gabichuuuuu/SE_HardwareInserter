@@ -1,107 +1,294 @@
 using System;
-using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Linq;
+using SE_HardwareInserter.Core.Geometry;
 using SolidEdgeAssembly;
 using SolidEdgeGeometry;
 
 namespace SE_HardwareInserter.SolidEdge
 {
     /// <summary>
-    /// Implementación por defecto de <see cref="IScrewGeometryResolver"/>: asume que todas las
-    /// plantillas .par del servidor de tornillería siguen el mismo orden/convención de modelado
-    /// (revolución del vástago primero, cabeza después), y localiza:
-    ///   - AxisFace: la cara cilíndrica de mayor área del cuerpo (el vástago; en un tornillo típico
-    ///     es la cara cilíndrica de mayor superficie frente a filetes/chaflanes menores).
-    ///   - HeadBottomFace: la cara plana de mayor área (el asiento inferior de la cabeza).
-    /// Firmas usadas verificadas por desensamblado del paquete NuGet Interop.SolidEdge 220.2.0:
-    /// Occurrence.Body (SolidEdgeGeometry.Body), Body.Faces(FeatureTopologyQueryTypeConstants) y
-    /// Face.Geometry/Face.Area (SolidEdgeGeometry.Face).
-    /// RIESGO: la heurística "mayor área cilíndrica = vástago" / "mayor área plana = asiento de
-    /// cabeza" NO está validada contra archivos .par reales (no hay Solid Edge instalado en el
-    /// entorno de desarrollo). Debe verificarse con 2-3 tornillos reales antes de usarla en
-    /// producción; si las plantillas no comparten convención, sustituir esta clase por una que
-    /// resuelva por nombre de cara.
+    /// Adapta la topología COM a descriptores administrados y delega la decisión en
+    /// <see cref="FastenerGeometryClassifier"/>. Una topología no soportada no se elige en silencio.
     /// </summary>
+    /// <remarks>
+    /// Los puntos base/root de las superficies analíticas se usan como heurística de proximidad;
+    /// cada release debe validarla con el corpus real de piezas antes de habilitarlo en producción.
+    /// </remarks>
     public sealed class IndexBasedScrewGeometryResolver : IScrewGeometryResolver
     {
-        public ScrewGeometryFaces Resolve(Occurrence screwOccurrence)
+        private const double MetresToMillimetres = 1000.0;
+        private const double SquareMetresToSquareMillimetres = 1000000.0;
+        private readonly FastenerGeometryClassifier _classifier = new FastenerGeometryClassifier();
+
+        public ScrewGeometryResolution Resolve(Occurrence screwOccurrence, double holeDiameterMm)
         {
-            object? bodyObj = null;
-            object? facesObj = null;
+            if (screwOccurrence == null) throw new ArgumentNullException(nameof(screwOccurrence));
+            if (double.IsNaN(holeDiameterMm) || double.IsInfinity(holeDiameterMm) || holeDiameterMm <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(holeDiameterMm));
+            }
+
+            object? bodyObject = null;
+            object? facesObject = null;
+            var cylinderCandidates = new List<OwnedCylinderCandidate>();
+            var planeCandidates = new List<OwnedPlaneCandidate>();
+            var topologyIncomplete = false;
             try
             {
-                bodyObj = screwOccurrence.Body;
-                var body = (Body)bodyObj;
-
-                facesObj = body.Faces[FeatureTopologyQueryTypeConstants.igQueryAll];
-                var faces = (Faces)facesObj;
-
-                Face? bestCylinder = null;
-                double bestCylinderArea = -1;
-                Face? bestPlane = null;
-                double bestPlaneArea = -1;
-
-                for (var i = 1; i <= faces.Count; i++)
+                bodyObject = screwOccurrence.Body;
+                var body = bodyObject as Body;
+                if (body == null)
                 {
-                    var faceObj = faces.Item(i);
-                    var face = (Face)faceObj;
-                    var retained = false;
+                    return ScrewGeometryResolution.CreateUnsupported(
+                        "La occurrence no expone un Body compatible con la interop cargada.");
+                }
+
+                facesObject = body.Faces[FeatureTopologyQueryTypeConstants.igQueryAll];
+                var faces = facesObject as Faces;
+                if (faces == null)
+                {
+                    return ScrewGeometryResolution.CreateUnsupported(
+                        "El Body no expone una colección Faces compatible con la interop cargada.");
+                }
+
+                for (var index = 1; index <= faces.Count; index++)
+                {
+                    object? faceObject = faces.Item(index);
+                    var face = faceObject as Face;
+                    if (face == null)
+                    {
+                        topologyIncomplete = true;
+                        ComInterop.ReleaseOwned(ref faceObject);
+                        continue;
+                    }
+                    faceObject = null;
+
                     object? geometry = null;
+                    var retained = false;
                     try
                     {
                         geometry = face.Geometry;
-                        if (geometry is Cylinder)
+                        if (geometry is Cylinder cylinder)
                         {
-                            var area = face.Area;
-                            if (area > bestCylinderArea)
+                            var descriptor = DescribeCylinder(index, face, cylinder);
+                            if (descriptor != null)
                             {
-                                bestCylinderArea = area;
-                                ReleaseIfSet(bestCylinder);
-                                bestCylinder = face;
+                                cylinderCandidates.Add(new OwnedCylinderCandidate(face, descriptor));
                                 retained = true;
                             }
-                        }
-                        else if (geometry is Plane)
-                        {
-                            var area = face.Area;
-                            if (area > bestPlaneArea)
+                            else
                             {
-                                bestPlaneArea = area;
-                                ReleaseIfSet(bestPlane);
-                                bestPlane = face;
+                                topologyIncomplete = true;
+                            }
+                        }
+                        else if (geometry is Plane plane)
+                        {
+                            var descriptor = DescribePlane(index, face, plane);
+                            if (descriptor != null)
+                            {
+                                planeCandidates.Add(new OwnedPlaneCandidate(face, descriptor));
                                 retained = true;
+                            }
+                            else
+                            {
+                                topologyIncomplete = true;
                             }
                         }
                     }
                     finally
                     {
-                        if (geometry != null && Marshal.IsComObject(geometry)) Marshal.ReleaseComObject(geometry);
-                        if (!retained && Marshal.IsComObject(face)) Marshal.ReleaseComObject(face);
+                        ComInterop.ReleaseOwned(ref geometry);
+                        if (!retained) ComInterop.ReleaseOwned(ref face);
                     }
                 }
 
-                if (bestCylinder == null || bestPlane == null)
+                var classification = _classifier.Classify(
+                    holeDiameterMm,
+                    cylinderCandidates.Select(candidate => candidate.Descriptor).ToList(),
+                    planeCandidates.Select(candidate => candidate.Descriptor).ToList());
+                if (classification.Status == FastenerGeometryStatus.Unsupported)
                 {
-                    ReleaseIfSet(bestCylinder);
-                    ReleaseIfSet(bestPlane);
-                    throw new InvalidOperationException(
-                        "No se pudo identificar el eje del vástago y/o la cara de apoyo de la cabeza del tornillo. " +
-                        "Verifique la convención de modelado del archivo .par o use un resolver alternativo.");
+                    return ScrewGeometryResolution.CreateUnsupported(
+                        AppendTopologyWarning(classification.Message, topologyIncomplete));
+                }
+                if (classification.Status == FastenerGeometryStatus.Ambiguous)
+                {
+                    return ScrewGeometryResolution.CreateAmbiguous(
+                        AppendTopologyWarning(classification.Message, topologyIncomplete));
+                }
+                if (topologyIncomplete)
+                {
+                    return ScrewGeometryResolution.CreateAmbiguous(
+                        classification.Message +
+                        " La topología estaba incompleta y no permite confirmar automáticamente la pareja.");
                 }
 
-                return new ScrewGeometryFaces(bestCylinder, bestPlane);
+                var selectedCylinder = cylinderCandidates.Single(
+                    candidate => candidate.Descriptor.SourceIndex == classification.CylinderSourceIndex);
+                var selectedPlane = planeCandidates.Single(
+                    candidate => candidate.Descriptor.SourceIndex == classification.PlaneSourceIndex);
+                Face? selectedAxisFace = null;
+                Face? selectedSupportFace = null;
+                try
+                {
+                    selectedAxisFace = selectedCylinder.TakeFace();
+                    selectedSupportFace = selectedPlane.TakeFace();
+                    var result = ScrewGeometryResolution.CreateResolved(selectedAxisFace, selectedSupportFace);
+                    selectedAxisFace = null;
+                    selectedSupportFace = null;
+                    return result;
+                }
+                finally
+                {
+                    ComInterop.ReleaseOwned(ref selectedSupportFace);
+                    ComInterop.ReleaseOwned(ref selectedAxisFace);
+                }
             }
             finally
             {
-                if (facesObj != null && Marshal.IsComObject(facesObj)) Marshal.ReleaseComObject(facesObj);
-                if (bodyObj != null && Marshal.IsComObject(bodyObj)) Marshal.ReleaseComObject(bodyObj);
+                foreach (var candidate in planeCandidates) candidate.Dispose();
+                foreach (var candidate in cylinderCandidates) candidate.Dispose();
+                ComInterop.ReleaseOwned(ref facesObject);
+                ComInterop.ReleaseOwned(ref bodyObject);
             }
         }
 
-        private static void ReleaseIfSet(object? comObject)
+        private static CylinderFaceDescriptor? DescribeCylinder(
+            int sourceIndex,
+            Face face,
+            Cylinder cylinder)
         {
-            if (comObject != null && Marshal.IsComObject(comObject))
+            Array basePoint = new double[3];
+            Array axisVector = new double[3];
+            double radius = 0;
+            cylinder.GetCylinderData(ref basePoint, ref axisVector, out radius);
+            if (!TryReadVector(axisVector, scale: 1.0, out var axis))
             {
-                Marshal.ReleaseComObject(comObject);
+                return null;
+            }
+            var radiusMm = radius * MetresToMillimetres;
+            var areaMm2 = face.Area * SquareMetresToSquareMillimetres;
+            if (!IsPositiveFinite(radiusMm) || !IsPositiveFinite(areaMm2)) return null;
+            GeometryVector3? root = TryReadVector(basePoint, MetresToMillimetres, out var baseVector)
+                ? baseVector
+                : (GeometryVector3?)null;
+            return new CylinderFaceDescriptor(
+                sourceIndex,
+                radiusMm,
+                areaMm2,
+                axis,
+                root);
+        }
+
+        private static PlaneFaceDescriptor? DescribePlane(
+            int sourceIndex,
+            Face face,
+            Plane plane)
+        {
+            Array rootPoint = new double[3];
+            Array normalVector = new double[3];
+            plane.GetPlaneData(ref rootPoint, ref normalVector);
+            if (!TryReadVector(normalVector, scale: 1.0, out var normal))
+            {
+                return null;
+            }
+            var areaMm2 = face.Area * SquareMetresToSquareMillimetres;
+            if (!IsPositiveFinite(areaMm2)) return null;
+            GeometryVector3? root = TryReadVector(rootPoint, MetresToMillimetres, out var rootVector)
+                ? rootVector
+                : (GeometryVector3?)null;
+            return new PlaneFaceDescriptor(
+                sourceIndex,
+                areaMm2,
+                normal,
+                root);
+        }
+
+        private static bool TryReadVector(Array? values, double scale, out GeometryVector3 vector)
+        {
+            vector = default;
+            if (values == null || values.Rank != 1 || values.Length < 3)
+            {
+                return false;
+            }
+
+            try
+            {
+                var lowerBound = values.GetLowerBound(0);
+                vector = new GeometryVector3(
+                    Convert.ToDouble(values.GetValue(lowerBound)) * scale,
+                    Convert.ToDouble(values.GetValue(lowerBound + 1)) * scale,
+                    Convert.ToDouble(values.GetValue(lowerBound + 2)) * scale);
+                return IsFinite(vector.X) && IsFinite(vector.Y) && IsFinite(vector.Z);
+            }
+            catch (Exception ex) when (
+                ex is InvalidCastException ||
+                ex is FormatException ||
+                ex is OverflowException ||
+                ex is ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private static string AppendTopologyWarning(string message, bool topologyIncomplete) =>
+            topologyIncomplete
+                ? message + " Parte de la topología no pudo describirse con seguridad."
+                : message;
+
+        private static bool IsFinite(double value) =>
+            !double.IsNaN(value) && !double.IsInfinity(value);
+
+        private static bool IsPositiveFinite(double value) => value > 0 && IsFinite(value);
+
+        private sealed class OwnedCylinderCandidate : IDisposable
+        {
+            private Face? _face;
+
+            public OwnedCylinderCandidate(Face face, CylinderFaceDescriptor descriptor)
+            {
+                _face = face;
+                Descriptor = descriptor;
+            }
+
+            public CylinderFaceDescriptor Descriptor { get; }
+
+            public Face TakeFace()
+            {
+                var face = _face ?? throw new InvalidOperationException("La cara cilíndrica ya fue transferida.");
+                _face = null;
+                return face;
+            }
+
+            public void Dispose()
+            {
+                ComInterop.ReleaseOwned(ref _face);
+            }
+        }
+
+        private sealed class OwnedPlaneCandidate : IDisposable
+        {
+            private Face? _face;
+
+            public OwnedPlaneCandidate(Face face, PlaneFaceDescriptor descriptor)
+            {
+                _face = face;
+                Descriptor = descriptor;
+            }
+
+            public PlaneFaceDescriptor Descriptor { get; }
+
+            public Face TakeFace()
+            {
+                var face = _face ?? throw new InvalidOperationException("La cara plana ya fue transferida.");
+                _face = null;
+                return face;
+            }
+
+            public void Dispose()
+            {
+                ComInterop.ReleaseOwned(ref _face);
             }
         }
     }

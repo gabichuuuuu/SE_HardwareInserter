@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -42,7 +43,7 @@ namespace SE_HardwareInserter.Core.Tests
         }
 
         [Fact]
-        public void Refresh_CarpetaConPar_DevuelveItemConRutaYCategoria()
+        public void Constructor_CarpetaConPar_CargaItemConRutaYCategoria()
         {
             var subDir = Path.Combine(_root, "DIN912");
             Directory.CreateDirectory(subDir);
@@ -50,7 +51,6 @@ namespace SE_HardwareInserter.Core.Tests
             File.WriteAllText(par, "placeholder");
 
             using var lib = new FileSystemFastenerLibrary(_root);
-            lib.Refresh();
 
             lib.Items.Should().HaveCount(1);
             var item = lib.Items.Single();
@@ -58,6 +58,17 @@ namespace SE_HardwareInserter.Core.Tests
             item.Category.Should().Be("DIN912");
             item.FullPath.Should().Be(par);
             item.RelativePath.Should().Be(Path.Combine("DIN912", "DIN912_M6x16.par"));
+        }
+
+        [Fact]
+        public void Refresh_CarpetaConPar_ActualizaElSnapshot()
+        {
+            using var lib = new FileSystemFastenerLibrary(_root);
+            File.WriteAllText(Path.Combine(_root, "manual.par"), "x");
+
+            lib.Refresh();
+
+            lib.Items.Should().ContainSingle(i => i.Filename == "manual.par");
         }
 
         [Fact]
@@ -123,24 +134,119 @@ namespace SE_HardwareInserter.Core.Tests
         public void Changed_NuevoPar_ApareceTrasWatch()
         {
             using var lib = new FileSystemFastenerLibrary(_root);
-            lib.Refresh();
-
-            var fired = false;
-            lib.Changed += (s, e) => fired = true;
+            using var changed = new ManualResetEventSlim();
+            lib.Changed += (s, e) => changed.Set();
 
             // Crear un .par nuevo en la raíz debe disparar el FileSystemWatcher.
             File.WriteAllText(Path.Combine(_root, "nuevo.par"), "x");
 
-            // Esperar a que el watcher procese (hasta 2s).
-            var deadline = DateTime.UtcNow.AddSeconds(2);
-            while (!fired && DateTime.UtcNow < deadline)
+            changed.Wait(TimeSpan.FromSeconds(5)).Should()
+                .BeTrue("el FileSystemWatcher debería haber disparado Changed al crear un .par");
+            lib.Items.Should().Contain(i => i.Filename == "nuevo.par");
+        }
+
+        [Fact]
+        public void SetRootPath_RutaInexistente_ConservaRaizYWatcherAnteriores()
+        {
+            using var lib = new FileSystemFastenerLibrary(_root);
+            var rutaInexistente = Path.Combine(Path.GetTempPath(), "no_existe_" + Guid.NewGuid().ToString("N"));
+
+            Action changeRoot = () => lib.SetRootPath(rutaInexistente);
+
+            changeRoot.Should().Throw<DirectoryNotFoundException>();
+            lib.RootPath.Should().Be(Path.GetFullPath(_root));
+
+            using var changed = new ManualResetEventSlim();
+            lib.Changed += (s, e) => changed.Set();
+            File.WriteAllText(Path.Combine(_root, "watcher-sigue-activo.par"), "x");
+
+            changed.Wait(TimeSpan.FromSeconds(5)).Should()
+                .BeTrue("un cambio de raíz fallido no debe desactivar el watcher anterior");
+            lib.Items.Should().ContainSingle(i => i.Filename == "watcher-sigue-activo.par");
+        }
+
+        [Fact]
+        public void RefreshGeneration_TokenDeRaizAnterior_NoEjecutaOtroEscaneo()
+        {
+            var otraRaiz = Path.Combine(Path.GetTempPath(), "SE_HardwareInserterTests_nueva_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(otraRaiz);
+            try
             {
-                Thread.Sleep(50);
-                lib.Refresh();
+                var scanCount = 0;
+                List<LibraryItem> Scanner(string root)
+                {
+                    Interlocked.Increment(ref scanCount);
+                    return new List<LibraryItem>();
+                }
+
+                using var lib = new FileSystemFastenerLibrary(_root, Scanner);
+                var staleGeneration = lib.CaptureGeneration();
+                lib.SetRootPath(otraRaiz);
+                var countAfterRootChange = scanCount;
+
+                lib.RefreshGeneration(staleGeneration);
+
+                lib.RootPath.Should().Be(Path.GetFullPath(otraRaiz));
+                scanCount.Should().Be(countAfterRootChange,
+                    "un token de una raíz anterior debe descartarse antes de invocar al scanner");
+            }
+            finally
+            {
+                if (Directory.Exists(otraRaiz)) Directory.Delete(otraRaiz, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void Constructor_FalloDeEscaneoInicial_PropagaError()
+        {
+            Func<string, List<LibraryItem>> failingScanner = root =>
+                throw new IOException("fallo inicial controlado");
+
+            Action action = () => new FileSystemFastenerLibrary(_root, failingScanner);
+
+            action.Should().Throw<IOException>()
+                .WithMessage("fallo inicial controlado");
+        }
+
+        [Fact]
+        public void Refresh_FalloDeEscaneo_ConservaSnapshotYExponeError()
+        {
+            var existingPath = Path.Combine(_root, "existente.par");
+            File.WriteAllText(existingPath, "x");
+            var failScan = false;
+            List<LibraryItem> Scanner(string root)
+            {
+                if (failScan) throw new IOException("fallo de refresh controlado");
+                return new List<LibraryItem>
+                {
+                    new LibraryItem(existingPath, "existente.par", "(Raíz)", "existente.par"),
+                };
             }
 
-            fired.Should().BeTrue("el FileSystemWatcher debería haber disparado Changed al crear un .par");
-            lib.Items.Should().Contain(i => i.Filename == "nuevo.par");
+            using var lib = new FileSystemFastenerLibrary(_root, Scanner);
+            LibraryErrorEventArgs? reportedError = null;
+            lib.Error += (s, e) => reportedError = e;
+            failScan = true;
+
+            lib.Refresh();
+
+            lib.Items.Should().ContainSingle(i => i.Filename == "existente.par");
+            lib.LastError.Should().BeAssignableTo<IOException>();
+            reportedError.Should().NotBeNull();
+            reportedError!.RootPath.Should().Be(Path.GetFullPath(_root));
+            reportedError.Exception.Should().BeSameAs(lib.LastError);
+        }
+
+        [Fact]
+        public void Dispose_DosVeces_EsSeguroYRefreshFallaDeFormaExplicita()
+        {
+            var lib = new FileSystemFastenerLibrary(_root);
+
+            lib.Dispose();
+            lib.Dispose();
+            Action refresh = () => lib.Refresh();
+
+            refresh.Should().Throw<ObjectDisposedException>();
         }
 
         [Fact]
@@ -168,19 +274,13 @@ namespace SE_HardwareInserter.Core.Tests
             lib.Refresh();
             lib.Items.Should().HaveCount(1);
 
-            var fired = false;
-            lib.Changed += (s, e) => fired = true;
+            using var changed = new ManualResetEventSlim();
+            lib.Changed += (s, e) => changed.Set();
 
             File.Delete(parPath);
 
-            var deadline = DateTime.UtcNow.AddSeconds(2);
-            while (!fired && DateTime.UtcNow < deadline)
-            {
-                Thread.Sleep(50);
-            }
-
-            fired.Should().BeTrue("el FileSystemWatcher debería haber disparado Changed al borrar un .par");
-            lib.Refresh();
+            changed.Wait(TimeSpan.FromSeconds(5)).Should()
+                .BeTrue("el FileSystemWatcher debería haber disparado Changed al borrar un .par");
             lib.Items.Should().BeEmpty();
         }
     }

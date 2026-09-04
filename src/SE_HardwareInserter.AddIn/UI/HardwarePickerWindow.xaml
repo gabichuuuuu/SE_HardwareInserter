@@ -36,24 +36,46 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="HoleInfo" Grid.Column="0" Text="Agujero: no capturado" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1" x:Name="CaptureHoleButton" Content="Capturar Agujero" Padding="8,2" Click="CaptureHoleButton_Click"/>
+                    <Button Grid.Column="1" x:Name="CaptureHoleButton" Content="Capturar agujero" Padding="8,2" Click="CaptureHoleButton_Click"/>
                 </Grid>
                 <CheckBox x:Name="ApplyConstraintsCheckBox" Content="Aplicar restricciones (Axial + Planar)" IsChecked="True" Margin="0,0,0,6"
+                          Click="ApplyConstraintsCheckBox_Click"
                           ToolTip="Marcado para tornillería (alinea eje y asiento). Desmarcado para anchors (inserción libre)."/>
+                <Border x:Name="GuidedPanel" Visibility="Collapsed" Margin="0,0,0,6" Padding="8"
+                        BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock x:Name="GuidedInstructionsText" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <WrapPanel HorizontalAlignment="Right">
+                            <Button x:Name="UseSelectedFacesButton" Content="Usar caras seleccionadas" Padding="8,2" Margin="0,0,6,0"
+                                    Click="UseSelectedFacesButton_Click"/>
+                            <Button x:Name="KeepFreeButton" Content="Conservar libre" Padding="8,2" Margin="0,0,6,0"
+                                    Click="KeepFreeButton_Click"/>
+                            <Button x:Name="CancelPendingButton" Content="Cancelar" Padding="8,2"
+                                    Click="CancelPendingButton_Click"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
                 <Button x:Name="InsertButton" Content="Insertar" Padding="16,4" HorizontalAlignment="Right" Click="InsertButton_Click" IsEnabled="False"/>
                 <TextBlock x:Name="StatusText" Text="" Margin="0,6,0,0" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
 
         <!-- Árbol de librería -->
-        <TreeView x:Name="LibraryTree" ItemsSource="{Binding}" MouseDoubleClick="LibraryTree_MouseDoubleClick">
+        <TreeView x:Name="LibraryTree" ItemsSource="{Binding}" MouseDoubleClick="LibraryTree_MouseDoubleClick"
+                  SelectedItemChanged="LibraryTree_SelectedItemChanged">
+            <TreeView.ItemContainerStyle>
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                </Style>
+            </TreeView.ItemContainerStyle>
             <TreeView.Resources>
                 <HierarchicalDataTemplate DataType="{x:Type local:CategoryNode}"
                                           ItemsSource="{Binding Children}">
                     <TextBlock Text="{Binding Name}" FontWeight="Bold"/>
                 </HierarchicalDataTemplate>
                 <DataTemplate DataType="{x:Type local:LibraryItemNode}">
-                    <TextBlock Text="{Binding Label}"/>
+                    <TextBlock Text="{Binding Label}" ToolTip="{Binding ToolTip}"/>
                 </DataTemplate>
             </TreeView.Resources>
         </TreeView>

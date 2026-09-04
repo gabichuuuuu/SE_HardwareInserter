@@ -5,20 +5,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Comandos comunes
 
 ```bash
-# Compilar toda la solución (formato .slnx, no .sln)
-dotnet build SE_HardwareInserter.slnx
+# Restaurar exactamente el grafo de dependencias versionado
+dotnet restore SE_HardwareInserter.slnx --locked-mode
+
+# Compilación canónica del add-in x64 (incluye Core y SolidEdge por ProjectReference)
+dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -c Debug -p:Platform=x64 --no-restore
 
 # Compilar un proyecto concreto
-dotnet build src/SE_HardwareInserter.Core/SE_HardwareInserter.Core.csproj
-dotnet build src/SE_HardwareInserter.SolidEdge/SE_HardwareInserter.SolidEdge.csproj
-dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -p:Platform=x64
+dotnet build src/SE_HardwareInserter.Core/SE_HardwareInserter.Core.csproj --no-restore
+dotnet build src/SE_HardwareInserter.SolidEdge/SE_HardwareInserter.SolidEdge.csproj --no-restore
 
 # Ejecutar todos los tests
-dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj
+dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj --no-restore
 
 # Ejecutar un test concreto (por nombre parcial de método)
-dotnet test tests/SE_HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
+dotnet test tests/SE_HardwareInserter.Core.Tests/ --no-restore --filter "FullyQualifiedName~Refresh_CarpetaConPar"
+
+# Diagnosticar el toolchain local sin instalar nada
+.\dev\check-prerequisites.ps1
 ```
+
+Los cuatro `packages.lock.json` están versionados y la restauración bloqueada es obligatoria en CI
+y compilaciones normales. Para cambiar dependencias intencionadamente, se ejecuta una restauración
+normal, se revisan los cuatro diffs y después se vuelve a `--locked-mode`.
+
+## Gates de CI y publicación
+
+- Los pull requests y pushes a `main` deben pasar build/tests x64 en Windows y el workflow
+  independiente `.github/workflows/codeql.yml` para C#.
+- Dependabot revisa semanalmente NuGet y las acciones de GitHub, siempre contra `main`.
+- Una release firmada no debe publicarse hasta que Azure Artifact Signing disponga de cuenta,
+  perfil Public Trust y federación OIDC validados. Los secretos de firma no se versionan.
+- El tag debe apuntar a un commit exclusivo con las cinco evidencias `SE2022.json`-`SE2026.json`;
+  su padre es el `sourceCommitSha` validado y el gate rechaza cualquier otro cambio en ese commit.
+  El procedimiento completo está en `validation/solid-edge/README.md`.
+- CI publica un candidato unsigned ligado a `GITHUB_SHA` mediante `source-commit.txt`. Es válido
+  solo para la matriz; release reconstruye locked, firma el binario final y ejecuta su smoke.
 
 > `dotnet test` requiere un testhost de .NET Framework 4.8, que no viene incluido en el SDK de
 > dotnet en Linux. Si falla con `Cannot open assembly '.../testhost.net48.exe'`, compila el
@@ -45,48 +67,48 @@ botón en la ribbon del entorno de ensamblaje; al pulsarlo, abre el diálogo WPF
 
 | Proyecto | Responsabilidad |
 |---|---|
-| `SE_HardwareInserter.Core` | Modelos (`LibraryItem`), librería de hardware basada en FS (`FileSystemFastenerLibrary` con `FileSystemWatcher`), preferencias (`Settings`/`JsonSettingsStore` en `%AppData%`). Sin dependencia de COM. |
-| `SE_HardwareInserter.SolidEdge` | Toda la interop con `Interop.SolidEdge`: captura de geometría e inserción/restricciones (`SolidEdgeHelper`), resolución de caras del tornillo (`IScrewGeometryResolver`), gestión de archivos `.par` (`HardwareFileManager`). |
-| `SE_HardwareInserter.AddIn` | Add-in COM (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registrado en HKCU con `regasm /codebase`. `ComRegisterFunction`/`ComUnregisterFunction` escriven/borran la subclave de Solid Edge. |
+| `SE_HardwareInserter.Core` | Modelos (`LibraryItem`), librería basada en FS (`FileSystemFastenerLibrary`), preferencias (`Settings`/`SettingsStore`) y caché inmutable por contenido (`LocalHardwareCache`/`LocalHardwareCopy`). Sin dependencia de COM. |
+| `SE_HardwareInserter.SolidEdge` | Toda la interop con `Interop.SolidEdge`: captura de geometría e inserción/restricciones (`SolidEdgeHelper`) y resolución de caras (`IScrewGeometryResolver`). |
+| `SE_HardwareInserter.AddIn` | Add-in COM (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`; coordina la caché Core con Solid Edge. Registro declarativo per-user en la vista HKCU de 64 bits. |
 | `SE_HardwareInserter.Core.Tests` | Tests xUnit + FluentAssertions de `FileSystemFastenerLibrary` y `Settings`. Sin COM. |
 
 ### Flujo de la UI (`HardwarePickerWindow`)
 
 1. **Cargar librería** → `FileSystemFastenerLibrary` escanea recursivamente `*.par` en la carpeta
    raíz configurada; el `FileSystemWatcher` refresca el árbol en vivo cuando se añaden/borran
-   archivos. El usuario agrupa por subcarpeta (categoría) y filtra por texto libre.
+   archivos. La UI reproduce recursivamente todas las subcarpetas y permite filtrar por texto libre.
 2. **Configurar carpeta** → botón "Carpeta..." → `FolderBrowserDialog` → cambia `RootPath` y lo
    persiste en `settings.json`.
 3. **Capturar Agujero** → `SolidEdgeHelper.CaptureSelectedHoleGeometry(application)` lee el
    `SelectSet` activo de Solid Edge. Se espera que el usuario haya seleccionado (Ctrl+click) la
    cara cilíndrica interior del agujero y, opcionalmente, su cara plana de apoyo, antes de pulsar
    el botón. Devuelve un `CapturedHoleGeometry` con el diámetro en mm.
-4. **Insertar** (por item seleccionado) → `HardwareFileManager.EnsureLocalCopy` copia el `.par` de
-   la librería a una carpeta `Hardware/` junto al ensamblaje activo (si no existe ya);
-   `SolidEdgeHelper.InsertOccurrenceAndConstrain` inserta la occurrence (`Occurrences.AddByFilename`)
-   y, si el checkbox "Aplicar restricciones" está marcado, aplica `Relations3d.AddAxial`/`AddPlanar`
-   contra la geometría capturada. Desmarcado = inserción libre (anchors).
+4. **Insertar** → la UI ejecuta únicamente `LocalHardwareCache.EnsureLocalCopy` fuera del hilo STA,
+   verifica SHA-256 y vuelve al hilo de Solid Edge antes de llamar a COM. La resolución sigue el
+   orden automática → selección guiada → conservar libre o cancelar; cerrar la ventana revierte
+   explícitamente cualquier occurrence pendiente. La caché inmutable no sobrescribe archivos
+   legacy existentes directamente bajo `Hardware/`.
+
+Los diagnósticos diarios se escriben best-effort en
+`%LocalAppData%\SE_HardwareInserter\logs`, rotan a 5 MB y se conservan 14 días. Un mismo
+`operationId` relaciona copia, inserción, restricciones, commit y rollback.
 
 ### Puntos de riesgo/extensión conocidos (no verificables sin Solid Edge real instalado)
 
 - **Unidades**: `SolidEdgeHelper` asume que la API devuelve longitudes en metros y convierte a mm
   (`MetrosAMilimetros = 1000.0`). Validar contra un documento real antes de confiar en el
   diámetro mostrado.
-- **Resolución de geometría del tornillo** (`IndexBasedScrewGeometryResolver`): no existe API
-  genérica de Solid Edge para saber qué cara de un `.par` recién insertado es el eje del vástago
-  o el asiento de la cabeza. La implementación por defecto usa una heurística (mayor cara
-  cilíndrica = eje, mayor cara plana = asiento) sobre `Occurrence.Body.Faces[FeatureTopologyQueryTypeConstants.igQueryAll]`.
-  Si las plantillas `.par` del servidor de tornillería usan una convención de nombres de cara
-  consistente, sustituir esta clase por una que implemente `IScrewGeometryResolver` resolviendo
-  por nombre, sin tocar el resto del flujo.
+- **Resolución de geometría del tornillo** (`IndexBasedScrewGeometryResolver`): adapta las caras
+  analíticas a descriptores administrados y delega en `FastenerGeometryClassifier`, que compara
+  diámetro, orientación, proximidad y dominancia. Un empate o topología insuficiente deriva al
+  flujo guiado; no se elige silenciosamente la cara de mayor área.
 - **Registro del botón en la ribbon**: `SetAddInInfoEx`/`AddCommandBarButton` están verificados por
   `monodis` pero NO probados en runtime. Si el botón no aparece, revisar: (1) registro en HKCU,
   (2) IDs de bitmap (actualmente 0 = sin icono), (3) CatID del entorno coincide con el tipo de
   documento activo.
 - **`EmbedInteropTypes=false`**: el `Interop.SolidEdge.dll` (NuGet comunidad, 220.2.0 / SE 2022)
-  se distribuye con el add-in. Es compatible con SE 2022-2026+ porque las interfaces de add-in
-  (`ISolidEdgeAddIn`, `ISEAddInEx`) son estables. Si una versión futura de SE añade métodos
-  obligatorios a estas interfaces, el addín necesitaría recompilación contra un interop más nuevo.
+  se distribuye con el add-in. La compatibilidad con SE 2022-2026 debe demostrarse en la matriz de
+  aceptación; la versión del paquete por sí sola no prueba la compatibilidad de ejecución.
 
 ### Catálogo de tornillería: escaneo de sistema de archivos (sin JSON/Excel)
 
@@ -94,8 +116,8 @@ El catálogo se construye dinámicamente escaneando una carpeta local recursivam
 `*.par`. No hay índice JSON ni importación Excel. La carpeta raíz la configura el usuario con el
 botón "Carpeta..." y se persiste en `%AppData%\SE_HardwareInserter\settings.json` (solo `RootPath`).
 Un `FileSystemWatcher` mantiene el árbol vivo: añadir un `.par` a la carpeta lo hace aparecer sin
-reiniciar Solid Edge. Cada `.par` se muestra tal cual (sin parseo de nombre); `Category` = nombre
-de la subcarpeta inmediata, `Filename` = nombre del archivo con extensión.
+reiniciar Solid Edge. El árbol conserva toda la jerarquía de `RelativePath`; cada hoja muestra
+`Filename` tal cual, sin inferir metadatos desde el nombre.
 
 ### Firmas de Interop.SolidEdge verificadas
 

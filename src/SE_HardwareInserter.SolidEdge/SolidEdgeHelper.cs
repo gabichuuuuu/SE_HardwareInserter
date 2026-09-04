@@ -1,5 +1,5 @@
 using System;
-using System.Runtime.InteropServices;
+using SE_HardwareInserter.Core.Diagnostics;
 using SolidEdgeAssembly;
 using SolidEdgeFramework;
 using SolidEdgeGeometry;
@@ -9,41 +9,49 @@ namespace SE_HardwareInserter.SolidEdge
     /// <summary>
     /// Envuelve todas las llamadas a la API de Solid Edge: captura de geometría del agujero,
     /// inserción del hardware (.par) como occurrence y, opcionalmente, restricción axial/planar
-    /// contra el agujero. Todo objeto COM obtenido explícitamente se libera con
-    /// <see cref="Marshal.ReleaseComObject"/> en finally.
+    /// contra el agujero. Los RCW adquiridos por esta capa tienen propiedad explícita; la instancia
+    /// <see cref="Application"/> recibida del host siempre es prestada y nunca se libera aquí.
     /// </summary>
     /// <remarks>
-    /// A diferencia de la versión anterior (macro standalone que resolvía la sesión vía
-    /// <c>Marshal.GetActiveObject</c>), esta clase recibe <see cref="Application"/> por parámetro:
-    /// el add-in COM ya la recibe en <c>OnConnection</c> y se la inyecta. No hay gestión de sesión.
+    /// Esta clase recibe <see cref="Application"/> por parámetro; el add-in COM obtiene la instancia
+    /// en <c>OnConnection</c> y se la inyecta. La clase no inicia ni localiza sesiones de Solid Edge.
     /// </remarks>
     public sealed class SolidEdgeHelper
     {
         private readonly IScrewGeometryResolver _screwGeometryResolver;
+        private readonly IAppLogger _logger;
 
         public SolidEdgeHelper(IScrewGeometryResolver screwGeometryResolver)
+            : this(screwGeometryResolver, NullAppLogger.Instance)
         {
-            _screwGeometryResolver = screwGeometryResolver;
+        }
+
+        public SolidEdgeHelper(IScrewGeometryResolver screwGeometryResolver, IAppLogger logger)
+        {
+            _screwGeometryResolver = screwGeometryResolver
+                ?? throw new ArgumentNullException(nameof(screwGeometryResolver));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
-        /// Lee el <c>SelectSet</c> activo del ensamblaje. Se espera que el usuario haya seleccionado
-        /// (con Ctrl+click en Solid Edge) la cara cilíndrica interior del agujero y, opcionalmente,
-        /// la cara plana de apoyo de la cabeza del tornillo, antes de pulsar "Capturar Agujero".
-        /// RIESGO no verificado sin Solid Edge real: las longitudes de la API vienen en el sistema de
-        /// unidades interno del documento (habitualmente metros); aquí se asume metros y se convierte
-        /// a mm — validar contra un documento real antes de confiar en el diámetro mostrado.
+        /// Captura referencias top-level del <c>SelectSet</c> activo. Solid Edge debe devolver
+        /// <see cref="Reference"/> cuyos objetos sean caras; una <see cref="Face"/> sin referencia
+        /// de ensamblaje se rechaza porque no puede persistirse con seguridad para una relación 3D.
         /// </summary>
         public CapturedHoleGeometry CaptureSelectedHoleGeometry(Application application)
         {
             if (application == null) throw new ArgumentNullException(nameof(application));
 
+            AssemblyDocument? assembly = null;
             SelectSet? selectSet = null;
-            Face? cylindricalFace = null;
-            Face? supportFace = null;
-            var retained = false;
+            Reference? axisReference = null;
+            Reference? supportReference = null;
+            Array? supportPoint = null;
+            var transferred = false;
             try
             {
+                assembly = GetActiveAssemblyOwned(application);
+                var identity = ReadIdentity(assembly);
                 selectSet = application.ActiveSelectSet;
                 if (selectSet.Count == 0)
                 {
@@ -53,137 +61,315 @@ namespace SE_HardwareInserter.SolidEdge
 
                 for (var i = 1; i <= selectSet.Count; i++)
                 {
-                    var item = selectSet.Item(i);
-                    if (item is not Face face)
+                    object? item = selectSet.Item(i);
+                    if (item is Face)
                     {
-                        if (Marshal.IsComObject(item)) Marshal.ReleaseComObject(item);
+                        ComInterop.ReleaseOwned(ref item);
+                        throw new InvalidOperationException(
+                            "Solid Edge devolvió una Face sin Reference top-level. Seleccione la cara desde el ensamblaje, no desde una pieza activada.");
+                    }
+                    Reference? reference = item as Reference;
+                    if (reference == null)
+                    {
+                        ComInterop.ReleaseOwned(ref item);
                         continue;
                     }
+                    item = null;
 
-                    object? geometry = null;
+                    Face? face = null;
                     try
                     {
-                        geometry = face.Geometry;
-                        if (geometry is Cylinder && cylindricalFace == null)
+                        face = GeometryInterop.GetOwnedFace(reference);
+                        if (axisReference == null && IsGeometry<Cylinder>(face))
                         {
-                            cylindricalFace = face;
+                            axisReference = reference;
+                            reference = null;
                         }
-                        else if (geometry is Plane && supportFace == null)
+                        else if (supportReference == null && IsGeometry<Plane>(face))
                         {
-                            supportFace = face;
-                        }
-                        else if (Marshal.IsComObject(face))
-                        {
-                            Marshal.ReleaseComObject(face);
+                            supportPoint = GeometryInterop.GetPointOnFace(face);
+                            supportReference = reference;
+                            reference = null;
                         }
                     }
                     finally
                     {
-                        if (geometry != null && Marshal.IsComObject(geometry)) Marshal.ReleaseComObject(geometry);
+                        ComInterop.ReleaseOwned(ref face);
+                        ComInterop.ReleaseOwned(ref reference);
                     }
                 }
 
-                if (cylindricalFace == null)
+                if (axisReference == null)
                 {
-                    throw new InvalidOperationException("Ninguna de las caras seleccionadas es cilíndrica.");
+                    throw new InvalidOperationException(
+                        "Ninguna referencia seleccionada apunta a una cara cilíndrica.");
                 }
+                ValidateCapturedReferencesShareOccurrence(axisReference, supportReference);
 
-                var cylinder = (Cylinder)cylindricalFace.Geometry;
-                const double MetrosAMilimetros = 1000.0;
-                double diameterMm;
+                Face? axisFace = null;
                 try
                 {
-                    diameterMm = cylinder.Radius * 2.0 * MetrosAMilimetros;
+                    axisFace = GeometryInterop.GetOwnedFace(axisReference);
+                    var diameterMm = GeometryInterop.GetCylinderDiameterMm(axisFace);
+                    var result = new CapturedHoleGeometry(
+                        axisReference,
+                        supportReference,
+                        supportPoint,
+                        assembly,
+                        identity.FullName,
+                        diameterMm);
+                    axisReference = null;
+                    supportReference = null;
+                    assembly = null;
+                    transferred = true;
+                    return result;
                 }
                 finally
                 {
-                    if (Marshal.IsComObject(cylinder)) Marshal.ReleaseComObject(cylinder);
+                    ComInterop.ReleaseOwned(ref axisFace);
                 }
-
-                retained = true; // CapturedHoleGeometry se hace responsable de liberar las caras
-                return new CapturedHoleGeometry(cylindricalFace, supportFace, diameterMm);
             }
             finally
             {
-                if (!retained)
+                if (!transferred)
                 {
-                    if (cylindricalFace != null && Marshal.IsComObject(cylindricalFace)) Marshal.ReleaseComObject(cylindricalFace);
-                    if (supportFace != null && Marshal.IsComObject(supportFace)) Marshal.ReleaseComObject(supportFace);
+                    ComInterop.ReleaseOwned(ref supportReference);
+                    ComInterop.ReleaseOwned(ref axisReference);
                 }
-                if (selectSet != null) Marshal.ReleaseComObject(selectSet);
+                ComInterop.ReleaseOwned(ref selectSet);
+                ComInterop.ReleaseOwned(ref assembly);
+            }
+        }
+
+        /// <summary>Inicia una inserción provisional, inicialmente grounded y todavía no confirmada.</summary>
+        public InsertionSession BeginInsertion(Application application, string localParPath)
+        {
+            return BeginInsertion(application, localParPath, Guid.NewGuid().ToString("N"));
+        }
+
+        /// <summary>Inicia una inserción provisional asociada al identificador de diagnóstico indicado.</summary>
+        public InsertionSession BeginInsertion(
+            Application application,
+            string localParPath,
+            string operationId)
+        {
+            if (application == null) throw new ArgumentNullException(nameof(application));
+            if (string.IsNullOrWhiteSpace(localParPath))
+            {
+                throw new ArgumentException("La ruta del archivo .par no puede estar vacía.", nameof(localParPath));
+            }
+            if (string.IsNullOrWhiteSpace(operationId))
+            {
+                throw new ArgumentException("El identificador de operación no puede estar vacío.", nameof(operationId));
+            }
+
+            AssemblyDocument? assembly = null;
+            Occurrences? occurrences = null;
+            Occurrence? occurrence = null;
+            Relations3d? relations = null;
+            var transferred = false;
+            try
+            {
+                assembly = GetActiveAssemblyOwned(application);
+                var identity = ReadIdentity(assembly);
+                occurrences = assembly.Occurrences;
+                occurrence = occurrences.AddByFilename(localParPath, Type.Missing);
+                relations = assembly.Relations3d;
+
+                var session = new InsertionSession(
+                    assembly,
+                    occurrences,
+                    occurrence,
+                    relations,
+                    identity.FullName,
+                    _screwGeometryResolver,
+                    _logger,
+                    operationId);
+                assembly = null;
+                occurrences = null;
+                occurrence = null;
+                relations = null;
+                transferred = true;
+                return session;
+            }
+            catch (Exception ex)
+            {
+                if (occurrence != null)
+                {
+                    var cleanupDiagnostics = new System.Collections.Generic.List<Exception>();
+                    var occurrenceDeleted = false;
+                    try
+                    {
+                        occurrence.Delete();
+                        occurrenceDeleted = true;
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        cleanupDiagnostics.Add(new InvalidOperationException(
+                            "No se pudo eliminar la occurrence creada antes de fallar BeginInsertion.",
+                            cleanupException));
+                    }
+
+                    var rollback = new RollbackResult(cleanupDiagnostics.ToArray(), occurrenceDeleted);
+                    if (!rollback.CleanupComplete)
+                    {
+                        throw new InsertionOperationException(ex, rollback);
+                    }
+                }
+                throw;
+            }
+            finally
+            {
+                if (!transferred)
+                {
+                    ComInterop.ReleaseOwned(ref relations);
+                    ComInterop.ReleaseOwned(ref occurrence);
+                    ComInterop.ReleaseOwned(ref occurrences);
+                    ComInterop.ReleaseOwned(ref assembly);
+                }
             }
         }
 
         /// <summary>
-        /// Inserta el archivo <c>.par</c> (ya copiado localmente) como occurrence del ensamblaje activo.
-        /// Si <paramref name="applyConstraints"/> es <c>true</c>, lo restringe: eje del vástago contra
-        /// la cara cilíndrica del agujero (<c>AddAxial</c>), y cara inferior de la cabeza contra la cara
-        /// de apoyo del agujero (<c>AddPlanar</c>, si fue capturada). Si es <c>false</c> (anchors),
-        /// inserta la occurrence sin aplicar restricciones — el usuario la posiciona libremente.
+        /// API compatible para el flujo actual de la UI. Las inserciones automáticas ambiguas se
+        /// revierten y solicitan selección guiada en vez de aplicar una heurística insegura.
         /// </summary>
         public void InsertOccurrenceAndConstrain(
             Application application,
             string localParPath,
-            CapturedHoleGeometry hole,
+            CapturedHoleGeometry? hole,
             bool applyConstraints)
         {
             if (application == null) throw new ArgumentNullException(nameof(application));
-            if (hole == null) throw new ArgumentNullException(nameof(hole));
+            if (applyConstraints && hole == null) throw new ArgumentNullException(nameof(hole));
 
-            Occurrences? occurrences = null;
-            Occurrence? occurrence = null;
-            Relations3d? relations = null;
-            object? axialRelation = null;
-            object? planarRelation = null;
-            ScrewGeometryFaces? screwFaces = null;
-            try
+            using (var session = BeginInsertion(application, localParPath))
             {
-                var assemblyDocument = (AssemblyDocument)application.ActiveDocument;
-
-                occurrences = assemblyDocument.Occurrences;
-                occurrence = occurrences.AddByFilename(localParPath, Type.Missing);
-
                 if (!applyConstraints)
                 {
-                    return; // Anchor: inserción libre, sin restricciones
+                    session.CommitFree();
+                    return;
                 }
-
-                screwFaces = _screwGeometryResolver.Resolve(occurrence);
-
-                relations = assemblyDocument.Relations3d;
-
-                axialRelation = relations.AddAxial(screwFaces.AxisFace, hole.CylindricalFace, NormalsAligned: true);
-
-                if (hole.SupportFace != null)
+                var resolution = session.TryApplyAutomaticConstraints(hole!);
+                if (resolution != AutomaticResolution.Resolved)
                 {
-                    Array? constrainingPoint1 = null;
-                    Array? constrainingPoint2 = null;
-                    planarRelation = relations.AddPlanar(
-                        screwFaces.HeadBottomFace, hole.SupportFace, true,
-                        ref constrainingPoint1!, ref constrainingPoint2!);
+                    session.Rollback();
+                    throw new InvalidOperationException(
+                        session.LastAutomaticResolutionMessage + " La occurrence provisional fue eliminada; use selección guiada.");
+                }
+            }
+        }
+
+        /// <summary>Lee directorio e identidad del ensamblaje activo guardado.</summary>
+        public static AssemblyIdentity GetActiveAssemblyIdentity(Application application)
+        {
+            if (application == null) throw new ArgumentNullException(nameof(application));
+            AssemblyDocument? assembly = null;
+            try
+            {
+                assembly = GetActiveAssemblyOwned(application);
+                return ReadIdentity(assembly);
+            }
+            finally
+            {
+                ComInterop.ReleaseOwned(ref assembly);
+            }
+        }
+
+        /// <summary>Directorio del ensamblaje activo, o null si todavía no ha sido guardado.</summary>
+        public static string? GetActiveAssemblyDirectory(Application application)
+        {
+            try
+            {
+                return GetActiveAssemblyIdentity(application).Directory;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Alias compatible; devuelve el directorio, no una ruta de archivo.</summary>
+        public static string? GetActiveAssemblyPath(Application application)
+        {
+            return GetActiveAssemblyDirectory(application);
+        }
+
+        private static AssemblyDocument GetActiveAssemblyOwned(Application application)
+        {
+            var documentType = application.ActiveDocumentType;
+            if (documentType != SolidEdgeFramework.DocumentTypeConstants.igAssemblyDocument &&
+                documentType != SolidEdgeFramework.DocumentTypeConstants.igSyncAssemblyDocument &&
+                documentType != SolidEdgeFramework.DocumentTypeConstants.igWeldmentAssemblyDocument)
+            {
+                throw new InvalidOperationException("El documento activo no es un ensamblaje compatible.");
+            }
+
+            object? activeDocument = null;
+            try
+            {
+                activeDocument = application.ActiveDocument;
+                if (!(activeDocument is AssemblyDocument assembly))
+                {
+                    throw new InvalidOperationException("Solid Edge no devolvió un AssemblyDocument válido.");
+                }
+                activeDocument = null;
+                return assembly;
+            }
+            finally
+            {
+                ComInterop.ReleaseOwned(ref activeDocument);
+            }
+        }
+
+        private static AssemblyIdentity ReadIdentity(AssemblyDocument assembly)
+        {
+            var directory = assembly.Path;
+            var fullName = assembly.FullName;
+            if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(fullName))
+            {
+                throw new InvalidOperationException("Guarde el ensamblaje antes de insertar hardware.");
+            }
+            return new AssemblyIdentity(directory, fullName);
+        }
+
+        private static bool IsGeometry<TGeometry>(Face face) where TGeometry : class
+        {
+            object? geometry = null;
+            try
+            {
+                geometry = face.Geometry;
+                return geometry is TGeometry;
+            }
+            finally
+            {
+                ComInterop.ReleaseOwned(ref geometry);
+            }
+        }
+
+        private static void ValidateCapturedReferencesShareOccurrence(
+            Reference axisReference,
+            Reference? supportReference)
+        {
+            if (supportReference == null) return;
+
+            object? axisOccurrence = null;
+            object? supportOccurrence = null;
+            try
+            {
+                axisOccurrence = ComInterop.GetOwnedTopOccurrence(axisReference);
+                supportOccurrence = ComInterop.GetOwnedTopOccurrence(supportReference);
+                if (!ComInterop.HasSameIdentity(axisOccurrence, supportOccurrence))
+                {
+                    throw new InvalidOperationException(
+                        "Las referencias axial y de apoyo pertenecen a occurrences distintas.");
                 }
             }
             finally
             {
-                if (planarRelation != null && Marshal.IsComObject(planarRelation)) Marshal.ReleaseComObject(planarRelation);
-                if (axialRelation != null && Marshal.IsComObject(axialRelation)) Marshal.ReleaseComObject(axialRelation);
-                if (screwFaces != null)
-                {
-                    if (Marshal.IsComObject(screwFaces.AxisFace)) Marshal.ReleaseComObject(screwFaces.AxisFace);
-                    if (Marshal.IsComObject(screwFaces.HeadBottomFace)) Marshal.ReleaseComObject(screwFaces.HeadBottomFace);
-                }
-                if (relations != null) Marshal.ReleaseComObject(relations);
-                if (occurrence != null) Marshal.ReleaseComObject(occurrence);
-                if (occurrences != null) Marshal.ReleaseComObject(occurrences);
+                ComInterop.ReleaseOwned(ref supportOccurrence);
+                ComInterop.ReleaseOwned(ref axisOccurrence);
             }
-        }
-
-        /// <summary>Ruta del ensamblaje activo, o null si aún no ha sido guardado.</summary>
-        public static string? GetActiveAssemblyPath(Application application)
-        {
-            if (application == null) throw new ArgumentNullException(nameof(application));
-            var path = ((AssemblyDocument)application.ActiveDocument).Path;
-            return string.IsNullOrWhiteSpace(path) ? null : path;
         }
     }
 }

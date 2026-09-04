@@ -1,89 +1,68 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
 
 namespace SE_HardwareInserter.Core.Library
 {
-    /// <summary>
-    /// Utilidades de ruta para net48, que no dispone de <c>Path.GetRelativePath</c> (añadido en .NET Core 2.1).
-    /// Implementación equivalente al algoritmo de <c>Path.GetRelativePath</c> de .NET Core.
-    /// </summary>
+    /// <summary>Utilidades de ruta compatibles con net48.</summary>
     internal static class PathHelper
     {
         /// <summary>
-        /// Devuelve la ruta relativa desde <paramref name="relativeTo"/> hasta <paramref name="path"/>,
-        /// usando separadores del SO. Ambas rutas deben ser absolutas y estar normalizadas.
+        /// Devuelve la ruta relativa desde <paramref name="relativeTo"/> hasta <paramref name="path"/>.
+        /// Compara segmentos sin distinguir mayúsculas en Windows y devuelve la ruta absoluta cuando
+        /// las raíces son distintas.
         /// </summary>
         public static string GetRelativePath(string relativeTo, string path)
         {
             if (string.IsNullOrEmpty(relativeTo)) throw new ArgumentException("relativeTo vacía", nameof(relativeTo));
             if (string.IsNullOrEmpty(path)) throw new ArgumentException("path vacío", nameof(path));
 
-            relativeTo = Path.GetFullPath(relativeTo);
-            path = Path.GetFullPath(path);
+            var basePath = Path.GetFullPath(relativeTo);
+            var targetPath = Path.GetFullPath(path);
+            var comparison = IsWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            var baseRoot = Path.GetPathRoot(basePath) ?? string.Empty;
+            var targetRoot = Path.GetPathRoot(targetPath) ?? string.Empty;
 
-            // Caso trivial: misma ruta → ".".
-            if (string.Equals(relativeTo, path, StringComparison.Ordinal))
+            if (!string.Equals(NormalizeRoot(baseRoot), NormalizeRoot(targetRoot), comparison))
             {
-                return ".";
+                return targetPath;
             }
 
-            var relativeToHasTrailing = EndsInSeparator(relativeTo);
-            if (!relativeToHasTrailing)
+            var baseSegments = SplitSegments(basePath.Substring(baseRoot.Length));
+            var targetSegments = SplitSegments(targetPath.Substring(targetRoot.Length));
+            var commonSegments = 0;
+            var commonLimit = Math.Min(baseSegments.Count, targetSegments.Count);
+            while (commonSegments < commonLimit &&
+                   string.Equals(baseSegments[commonSegments], targetSegments[commonSegments], comparison))
             {
-                relativeTo += Path.DirectorySeparatorChar;
+                commonSegments++;
             }
 
-            var commonLength = GetCommonPathLength(relativeTo, path);
-            if (commonLength == 0)
+            var result = new List<string>();
+            for (var i = commonSegments; i < baseSegments.Count; i++)
             {
-                return path;
+                result.Add("..");
+            }
+            for (var i = commonSegments; i < targetSegments.Count; i++)
+            {
+                result.Add(targetSegments[i]);
             }
 
-            var sb = new StringBuilder();
-            for (var i = commonLength; i < relativeTo.Length; i++)
-            {
-                var c = relativeTo[i];
-                if (c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar)
-                {
-                    sb.Append("..").Append(Path.DirectorySeparatorChar);
-                }
-            }
-
-            if (path.Length > commonLength)
-            {
-                sb.Append(path.Substring(commonLength));
-            }
-            else if (sb.Length > 0 && sb[sb.Length - 1] == Path.DirectorySeparatorChar)
-            {
-                sb.Remove(sb.Length - 1, 1);
-            }
-
-            return sb.ToString();
+            return result.Count == 0
+                ? "."
+                : string.Join(Path.DirectorySeparatorChar.ToString(), result);
         }
 
-        private static bool EndsInSeparator(string path)
+        private static bool IsWindows => Path.DirectorySeparatorChar == '\\';
+
+        private static string NormalizeRoot(string root) =>
+            root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        private static List<string> SplitSegments(string path)
         {
-            if (path.Length == 0) return false;
-            var c = path[path.Length - 1];
-            return c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar;
+            return new List<string>(path.Split(
+                new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                StringSplitOptions.RemoveEmptyEntries));
         }
-
-        private static int GetCommonPathLength(string a, string b)
-        {
-            var length = Math.Min(a.Length, b.Length);
-            for (var i = 0; i < length; i++)
-            {
-                var c1 = a[i];
-                var c2 = b[i];
-                if (c1 == c2) continue;
-                if (IsSeparator(c1) && IsSeparator(c2)) continue;
-                return i;
-            }
-            return length;
-        }
-
-        private static bool IsSeparator(char c) =>
-            c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar;
     }
 }

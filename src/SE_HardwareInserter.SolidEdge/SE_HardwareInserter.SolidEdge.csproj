@@ -16,14 +16,13 @@
 
     Interop.SolidEdge (paquete NuGet de la comunidad Solid Edge) expone los
     namespaces SolidEdgeFramework/SolidEdgeAssembly/SolidEdgePart/SolidEdgeGeometry.
-    Con EmbedInteropTypes=true los tipos se incrustan en el ensamblado compilado:
-    no se distribuye ningún binario de Siemens y no hace falta tener Solid Edge
-    instalado para compilar. En tiempo de ejecución esta macro se conecta al
-    Solid Edge realmente instalado en esa máquina vía Marshal.GetActiveObject.
+    EmbedInteropTypes=false mantiene la interop como DLL separada en la salida.
+    Este proyecto es una biblioteca del add-in COM; no inicia Solid Edge ni busca
+    una sesión global por su cuenta.
     ═══════════════════════════════════════════════════════════════════════════
   -->
   <ItemGroup>
-    <PackageReference Include="Interop.SolidEdge" Version="220.2.0">
+    <PackageReference Include="Interop.SolidEdge">
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </PackageReference>
   </ItemGroup>

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "root": "HKCU64",
+  "clsid": "{DC87125A-6DBF-43A5-968B-2578CCBFC158}",
+  "canonicalProgId": "SE_HardwareInserter.AddIn",
+  "legacyProgId": "HardwareInserter.AddIn",
+  "className": "SE_HardwareInserter.AddIn.SE_HardwareInserterAddIn",
+  "assemblyDisplayName": "SE_HardwareInserter.AddIn, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+  "assemblyVersion": "1.0.0.0",
+  "managedCategory": "{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}",
+  "appId": "{7B7C6B2E-9C7D-4B2E-9E2B-6F5F6F5A1B3B}",
+  "codeBase": "${CODEBASE_URI}",
+  "registryPaths": [
+    "Software\\Classes\\SE_HardwareInserter.AddIn",
+    "Software\\Classes\\SE_HardwareInserter.AddIn\\CLSID",
+    "Software\\Classes\\HardwareInserter.AddIn",
+    "Software\\Classes\\HardwareInserter.AddIn\\CLSID",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\InprocServer32",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\InprocServer32\\1.0.0.0",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\ProgId",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\Implemented Categories\\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}",
+    "Software\\Solid Edge\\Add-Ins\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}"
+  ],
+  "requiredValues": {
+    "InprocServer32.default": "mscoree.dll",
+    "InprocServer32.ThreadingModel": "Both",
+    "InprocServer32.Class": "SE_HardwareInserter.AddIn.SE_HardwareInserterAddIn",
+    "InprocServer32.Assembly": "SE_HardwareInserter.AddIn, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+    "InprocServer32.RuntimeVersion": "v4.0.30319",
+    "InprocServer32.CodeBase": "${CODEBASE_URI}",
+    "SolidEdge.Description": "SE_HardwareInserter: inserción de tornillería y anchors desde librería local.",
+    "SolidEdge.Summary": "Add-in para inserción automática de hardware en ensamblajes de Solid Edge.",
+    "SolidEdge.Visible": 1
+  }
+}

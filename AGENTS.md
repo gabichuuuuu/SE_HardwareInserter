@@ -6,18 +6,24 @@ see `CLAUDE.md` (verified accurate against source).
 ## Commands
 
 ```bash
-# Build whole solution (note: .slnx format, not .sln)
-dotnet build SE_HardwareInserter.slnx
+# Restore the exact committed dependency graph
+dotnet restore SE_HardwareInserter.slnx --locked-mode
+
+# Canonical add-in build (ProjectReferences build Core and SolidEdge)
+dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -c Debug -p:Platform=x64 --no-restore
 
 # Build a single project
-dotnet build src/SE_HardwareInserter.Core/SE_HardwareInserter.Core.csproj
-dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -p:Platform=x64
+dotnet build src/SE_HardwareInserter.Core/SE_HardwareInserter.Core.csproj --no-restore
 
 # Run all tests
-dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj
+dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj --no-restore
 
 # Run a single test by partial method name
-dotnet test tests/SE_HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
+dotnet test tests/SE_HardwareInserter.Core.Tests/ --no-restore --filter "FullyQualifiedName~Refresh_CarpetaConPar"
+
+# Diagnose the local toolchain without installing anything
+.\dev\check-prerequisites.ps1
+.\dev\check-prerequisites.ps1 -Profile Packaging
 ```
 
 ## Register/unregister the add-in (Windows, PowerShell)
@@ -37,15 +43,19 @@ dotnet test tests/SE_HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~R
   Pinned to net48 for Solid Edge COM interop compatibility — do not bump.
 - **`Nullable` is `enable` AND `WarningsAsErrors` for `Nullable`** (`Directory.Build.props`).
   Any nullability warning fails the build. Wire nullability annotations correctly on every change.
-- **Solution file is `.slnx`** (XML-based sln format), not `.sln`. Always pass `SE_HardwareInserter.slnx`.
+- **Solution file is `.slnx`** (XML-based sln format), not `.sln`. Use it for solution restore;
+  build the add-in through its x64 `.csproj`, as shown above.
+- **Package lock files are committed and locked restore is mandatory** in normal builds and CI.
+  When intentionally changing dependencies, run one normal restore, review all four lock-file diffs,
+  then return to `--locked-mode`.
 - **`Interop.SolidEdge` uses `EmbedInteropTypes=false`** in `SE_HardwareInserter.SolidEdge` and
   `SE_HardwareInserter.AddIn`: the `Interop.SolidEdge.dll` from NuGet is copied to the output directory
-  and distributed with the add-in. This is required because `EmbedInteropTypes=true` does not
-  generate .NET event wrappers for COM source interfaces (`ISEAddInEvents`), so `+=` on
-  `AddInEventsClass.OnCommand` fails with `CS1656`. With `false`, the full interop DLL (including
-  the `AddInEventsClass` coclass with event accessors) is available.
-- **Build platform is `x64`**: Solid Edge is 64-bit since 2020. The add-in must match. Always build
-  with `-p:Platform=x64` and register with the Framework64 `RegAsm.exe`.
+  and distributed with the add-in. This keeps the complete interop assembly available at runtime;
+  do not change the setting without rebuilding and testing registration, event subscription and
+  startup against a real Solid Edge installation.
+- **Build platform is `x64`**: Solid Edge is 64-bit. Always build with `-p:Platform=x64`.
+  Development and installation use the declarative per-user registration contract in
+  `dev/SEHardwareInserter.Registration.psm1`; `RegAsm` is used only to regenerate the golden.
 
 ## Test runner gotcha on Linux (critical)
 
@@ -62,9 +72,9 @@ mono ~/.nuget/packages/xunit.runner.console/<version>/tools/net48/xunit.console.
 `dotnet add package` on the test project (then reverted). If missing, add it temporarily, run,
 then revert the `.csproj` change. Never leave it as a permanent dependency.
 
-There are no tests for `SE_HardwareInserter.SolidEdge` or `SE_HardwareInserter.AddIn` and there cannot be
-without a real Solid Edge installation (COM interop). Do not attempt to add unit tests that touch
-`SolidEdge.*` types.
+There are currently no tests for `SE_HardwareInserter.SolidEdge` or `SE_HardwareInserter.AddIn`.
+Direct COM integration tests require a real Solid Edge installation; pure logic and code behind a
+testable gateway can still be unit tested without starting Solid Edge.
 
 ## Architecture: COM add-in (not a standalone macro)
 
@@ -114,26 +124,25 @@ method**. Calling it as `Faces(...)` triggers `CS1955`. Index it with `[]`.
   `MetrosAMilimetros = 1000.0` (`SolidEdgeHelper.cs:88`). Validate against a real document before
   trusting the displayed diameter.
 - **Screw face resolution** (`IndexBasedScrewGeometryResolver`): Solid Edge has no generic API to
-  tell which face of a freshly inserted `.par` is the shank axis vs. the head seat. Default impl
-  uses a heuristic (largest cylindrical face = axis, largest planar face = seat) over
-  `Occurrence.Body.Faces[igQueryAll]`. If the `.par` templates use consistent face naming, replace
-  this class with a name-based `IScrewGeometryResolver` — the rest of the flow is unchanged.
+  tell which face of a freshly inserted `.par` is the shank axis vs. the head seat. The current
+  resolver classifies geometric candidates and only commits a dominant compatible pair; ambiguous
+  or unsupported cases continue through guided selection instead of choosing silently. If the
+  `.par` templates adopt stable face names, a name-based resolver remains a valid extension.
 - **Add-in ribbon registration**: `SetAddInInfoEx` / `AddCommandBarButton` are verified by
   `monodis` but NOT tested at runtime. The button should appear in the Assembly environment
   ribbon. If it does not, check: (1) registration in HKCU, (2) bitmap resource IDs (currently 0 =
   no icon), (3) environment CatID matches the active document type.
 - **`EmbedInteropTypes=false`**: the `Interop.SolidEdge.dll` (community NuGet, 220.2.0 / SE 2022)
-  is distributed with the add-in. It is compatible with SE 2022-2026+ because the add-in interfaces
-  (`ISolidEdgeAddIn`, `ISEAddInEx`) are stable. If a future SE version adds required methods to
-  these interfaces, the add-in would need recompilation against a newer interop.
+  is distributed with the add-in. Compatibility with SE 2022-2026 remains an acceptance-matrix
+  requirement; the package version alone does not prove runtime compatibility.
 
 ## Project boundaries
 
 | Project | Role | COM? |
 |---|---|---|
-| `SE_HardwareInserter.Core` | Models, FS-based hardware library (`FileSystemFastenerLibrary`), settings (`Settings`/`JsonSettingsStore`) | No |
-| `SE_HardwareInserter.SolidEdge` | COM interop: geometry capture, insertion/constraints, `.par` file management | Yes |
-| `SE_HardwareInserter.AddIn` | COM add-in (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registered in HKCU. | Yes |
+| `SE_HardwareInserter.Core` | Models, FS-based library (`FileSystemFastenerLibrary`), settings (`Settings`/`SettingsStore`), and immutable content-addressed cache (`LocalHardwareCache`/`LocalHardwareCopy`) | No |
+| `SE_HardwareInserter.SolidEdge` | COM interop: geometry capture and insertion/constraints | Yes |
+| `SE_HardwareInserter.AddIn` | COM add-in (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`; coordinates the Core cache with Solid Edge and is registered in HKCU | Yes |
 | `SE_HardwareInserter.Core.Tests` | xUnit + FluentAssertions, Core only | No |
 
 ### Catalog: filesystem scanning (no JSON/Excel)
@@ -142,8 +151,14 @@ The catalog is built dynamically by `FileSystemFastenerLibrary` scanning a local
 for `*.par` files. No JSON index, no Excel import. The folder root is configured by the user via
 the "Carpeta..." button and persisted in `%AppData%\SE_HardwareInserter\settings.json` (only `RootPath`).
 A `FileSystemWatcher` keeps the tree live: adding a `.par` to the folder makes it appear without
-restarting Solid Edge. Each `.par` is shown as-is (no name parsing); `Category` = immediate
-subfolder name, `Filename` = file name with extension.
+restarting Solid Edge. The UI builds the complete folder hierarchy from `RelativePath`; each
+`.par` keeps its original `Filename` and exposes the relative path as a tooltip, without parsing
+or inferring metadata from its name.
+
+Before insertion, `LocalHardwareCache.EnsureLocalCopy` stores an immutable, SHA-256-addressed copy
+under `Hardware/.se-hardware-inserter/<verified-hash-prefix>/`. Each payload has its own manifest
+with a path relative to the assembly directory, so moving the project does not invalidate the cache.
+The UI passes `LocalHardwareCopy.LocalPath` to Solid Edge and never overwrites legacy `Hardware` files.
 
 ## Conventions
 

@@ -3,6 +3,22 @@ using System.Collections.Generic;
 
 namespace SE_HardwareInserter.Core.Library
 {
+    /// <summary>Describe un error recuperable al observar o refrescar una librería.</summary>
+    public sealed class LibraryErrorEventArgs : EventArgs
+    {
+        public LibraryErrorEventArgs(string rootPath, Exception exception)
+        {
+            RootPath = rootPath ?? throw new ArgumentNullException(nameof(rootPath));
+            Exception = exception ?? throw new ArgumentNullException(nameof(exception));
+        }
+
+        /// <summary>Raíz cuyo watcher o escaneo produjo el error.</summary>
+        public string RootPath { get; }
+
+        /// <summary>Error que impidió completar la actualización.</summary>
+        public Exception Exception { get; }
+    }
+
     /// <summary>
     /// Entrada de la librería de hardware descubierta escaneando el sistema de archivos:
     /// un archivo <c>.par</c> con su ruta completa, su categoría (subcarpeta inmediata) y su nombre.
@@ -50,11 +66,17 @@ namespace SE_HardwareInserter.Core.Library
         /// <summary>Lista inmutable de los <c>.par</c> descubiertos, ordenada por ruta relativa.</summary>
         IReadOnlyList<LibraryItem> Items { get; }
 
+        /// <summary>Último error recuperable al observar o refrescar la librería.</summary>
+        Exception? LastError { get; }
+
         /// <summary>
         /// Se lanza cuando el contenido de <see cref="RootPath"/> cambia (nuevo <c>.par</c>, borrado, renombrado).
         /// Los argumentos del evento son <c>EventArgs.Empty</c>; el receptor debe releer <see cref="Items"/>.
         /// </summary>
-        event EventHandler Changed;
+        event EventHandler? Changed;
+
+        /// <summary>Se lanza cuando un error posterior a la construcción impide actualizar el snapshot.</summary>
+        event EventHandler<LibraryErrorEventArgs>? Error;
 
         /// <summary>Reescanea <see cref="RootPath"/> y refresca <see cref="Items"/> de forma síncrona.</summary>
         void Refresh();

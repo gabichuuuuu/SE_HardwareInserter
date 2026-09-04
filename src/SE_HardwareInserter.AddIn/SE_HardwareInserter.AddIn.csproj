@@ -8,7 +8,7 @@
     <AssemblyName>SE_HardwareInserter.AddIn</AssemblyName>
 
     <!-- Add-in COM: Visible a COM y registrable con regasm. -->
-    <ComVisible>true</ComVisible>
+    <ComVisible>false</ComVisible>
 
     <!-- Solid Edge es 64-bit desde 2020: el add-in debe correr en el mismo bit que el host. -->
     <Platforms>x64</Platforms>
@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Interop.SolidEdge" Version="220.2.0">
+    <PackageReference Include="Interop.SolidEdge">
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </PackageReference>
   </ItemGroup>

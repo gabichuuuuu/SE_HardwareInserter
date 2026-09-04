@@ -1,8 +1,9 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using SE_HardwareInserter.AddIn.UI;
+using SE_HardwareInserter.Core.Diagnostics;
 using SE_HardwareInserter.SolidEdge;
-using SolidEdgeAssembly;
 using SolidEdgeFramework;
 
 namespace SE_HardwareInserter.AddIn
@@ -16,11 +17,12 @@ namespace SE_HardwareInserter.AddIn
     /// <remarks>
     /// Implementa <see cref="ISolidEdgeAddIn"/>, el contrato COM que Solid Edge invoca al cargar/descargar
     /// el add-in. Las firmas se verificaron desensamblando <c>Interop.SolidEdge.dll 220.2.0</c> con
-    /// <c>monodis</c>. El add-in se compila contra 220.2.0 (SE 2022) con <c>EmbedInteropTypes=true</c>,
-    /// pero las interfaces <c>ISolidEdgeAddIn</c>/<c>ISEAddInEx</c> son estables y retrocompatibles con
-    /// versiones posteriores de Solid Edge (2022-2026 y siguientes).
+    /// <c>monodis</c>. El add-in se compila contra 220.2.0 (SE 2022) con
+    /// <c>EmbedInteropTypes=false</c>. La compatibilidad de ejecución debe validarse en la matriz
+    /// de Solid Edge 2022-2026 antes de publicar una versión de producción.
     /// </remarks>
     [ComVisible(true)]
+    [ClassInterface(ClassInterfaceType.None)]
     [Guid("DC87125A-6DBF-43A5-968B-2578CCBFC158")]
     [ProgId("SE_HardwareInserter.AddIn")]
     public sealed class SE_HardwareInserterAddIn : ISolidEdgeAddIn, IDisposable
@@ -41,6 +43,8 @@ namespace SE_HardwareInserter.AddIn
         private AddInEventsClass? _addInEvents;
         private HardwarePickerWindow? _pickerWindow;
         private SolidEdgeHelper? _solidEdgeHelper;
+        private IAppLogger _logger = NullAppLogger.Instance;
+        private readonly string _lifecycleOperationId = Guid.NewGuid().ToString("N");
         private bool _disposed;
 
         /// <summary>
@@ -49,9 +53,13 @@ namespace SE_HardwareInserter.AddIn
         /// </summary>
         public void OnConnection(object Application, SeConnectMode ConnectMode, SolidEdgeFramework.AddIn AddInInstance)
         {
-            _application = (Application)Application;
+            try
+            {
+                _logger = new FileAppLogger();
+                _application = (Application)Application;
+                _logger.Info(_lifecycleOperationId, "connection", "Comienza la conexión del add-in.");
 
-            _solidEdgeHelper = new SolidEdgeHelper(new IndexBasedScrewGeometryResolver());
+                _solidEdgeHelper = new SolidEdgeHelper(new IndexBasedScrewGeometryResolver(), _logger);
 
             // Suscribir eventos de comando del add-in.
             var addInEx = (ISEAddInEx)AddInInstance;
@@ -75,7 +83,16 @@ namespace SE_HardwareInserter.AddIn
                 CommandNames: ref commandNames,
                 CommandIDs: ref commandIds);
 
-            addInEx.AddCommandBarButton(AssemblyEnvCatId, CommandBarName, CmdInsertarHardware);
+                addInEx.AddCommandBarButton(AssemblyEnvCatId, CommandBarName, CmdInsertarHardware);
+                _logger.Info(_lifecycleOperationId, "connection", "Add-in conectado y comando registrado.");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(_lifecycleOperationId, "connection", "Falló la conexión del add-in.", ex);
+                CleanupOwnedState("connection-cleanup");
+                _logger.Info(_lifecycleOperationId, "connection-cleanup", "Cleanup de conexión finalizado.");
+                _logger = NullAppLogger.Instance;
+            }
         }
 
         /// <summary>Llamado por Solid Edge al conectar el add-in a un entorno concreto.</summary>
@@ -118,9 +135,10 @@ namespace SE_HardwareInserter.AddIn
             if (_application == null) return false;
             try
             {
-                return _application.ActiveDocument is AssemblyDocument;
+                return _application.ActiveDocumentType ==
+                    SolidEdgeFramework.DocumentTypeConstants.igAssemblyDocument;
             }
-            catch
+            catch (COMException)
             {
                 return false;
             }
@@ -136,9 +154,50 @@ namespace SE_HardwareInserter.AddIn
                 return;
             }
 
-            _pickerWindow = new HardwarePickerWindow(_application, _solidEdgeHelper);
-            _pickerWindow.Closed += (_, _) => _pickerWindow = null;
-            _pickerWindow.Show();
+            HardwarePickerWindow? window = null;
+            try
+            {
+                window = new HardwarePickerWindow(_application, _solidEdgeHelper, _logger);
+                var ownerHandle = new IntPtr(_application.hWnd);
+                if (ownerHandle != IntPtr.Zero)
+                {
+                    new WindowInteropHelper(window).Owner = ownerHandle;
+                }
+
+                window.Closed += (_, _) =>
+                {
+                    if (ReferenceEquals(_pickerWindow, window)) _pickerWindow = null;
+                };
+                _pickerWindow = window;
+                window.Show();
+                _logger.Info(_lifecycleOperationId, "window", "Ventana de hardware abierta.");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(_lifecycleOperationId, "window", "No se pudo abrir la ventana de hardware.", ex);
+                if (ReferenceEquals(_pickerWindow, window)) _pickerWindow = null;
+                try
+                {
+                    window?.Close();
+                }
+                catch
+                {
+                    // La construcción o apertura ya falló; no propagar otro error al callback COM.
+                }
+
+                try
+                {
+                    System.Windows.MessageBox.Show(
+                        "No se pudo abrir SE_HardwareInserter: " + ex.Message,
+                        "SE_HardwareInserter",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Error);
+                }
+                catch
+                {
+                    // El callback COM no debe romper el host aunque tampoco pueda mostrarse el error.
+                }
+            }
         }
 
         /// <summary>
@@ -169,26 +228,61 @@ namespace SE_HardwareInserter.AddIn
         {
             if (_disposed) return;
             _disposed = true;
+            try
+            {
+                _logger.Info(_lifecycleOperationId, "disconnection", "Comienza la desconexión del add-in.");
+                CleanupOwnedState("disconnection");
+            }
+            finally
+            {
+                _solidEdgeHelper = null;
+                _application = null;
+                _logger.Info(_lifecycleOperationId, "disconnection", "Add-in desconectado.");
+                _logger = NullAppLogger.Instance;
+            }
+        }
 
-            _pickerWindow?.Close();
+        private void CleanupOwnedState(string phase)
+        {
+            var window = _pickerWindow;
             _pickerWindow = null;
+            try
+            {
+                window?.CloseForDisconnection();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(_lifecycleOperationId, phase, "No se pudo cerrar la ventana del add-in.", ex);
+            }
 
-            if (_addInEvents != null)
+            var addInEvents = _addInEvents;
+            _addInEvents = null;
+            if (addInEvents != null)
             {
                 try
                 {
-                    _addInEvents.OnCommand -= OnCommand;
-                    _addInEvents.OnCommandUpdateUI -= OnCommandUpdateUI;
+                    addInEvents.OnCommand -= OnCommand;
+                    addInEvents.OnCommandUpdateUI -= OnCommandUpdateUI;
                 }
-                catch { /* best-effort al desuscribir */ }
-                if (Marshal.IsComObject(_addInEvents)) Marshal.ReleaseComObject(_addInEvents);
-                _addInEvents = null;
+                catch (Exception ex)
+                {
+                    _logger.Error(_lifecycleOperationId, phase, "No se pudieron desuscribir los eventos del add-in.", ex);
+                }
+                finally
+                {
+                    try
+                    {
+                        if (Marshal.IsComObject(addInEvents)) Marshal.ReleaseComObject(addInEvents);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(_lifecycleOperationId, phase, "No se pudo liberar AddInEvents.", ex);
+                    }
+                }
             }
 
-            if (_application != null && Marshal.IsComObject(_application))
-            {
-                Marshal.ReleaseComObject(_application);
-            }
+            _solidEdgeHelper = null;
+            // Application pertenece a Solid Edge y nunca se libera con ReleaseComObject.
             _application = null;
         }
     }
