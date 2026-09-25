@@ -57,7 +57,7 @@ constraints.
 ## Development
 
 To build from source, run tests, or understand the project's architecture (a COM add-in, not a
-standalone app), see [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md).
+standalone app), see [`AGENTS.md`](AGENTS.md).
 The per-user COM keys, RegAsm golden and safe migration boundary are documented in
 [`docs/COM-registration.md`](docs/COM-registration.md).
 
@@ -154,7 +154,7 @@ correspondientes automáticamente.
 ## Desarrollo
 
 Para compilar desde el código fuente, ejecutar tests o entender la arquitectura del proyecto
-(add-in COM, no app standalone), consulta [`AGENTS.md`](AGENTS.md) y [`CLAUDE.md`](CLAUDE.md).
+(add-in COM, no app standalone), consulta [`AGENTS.md`](AGENTS.md).
 El registro COM per-user, el golden de RegAsm y el límite seguro de migración se documentan en
 [`docs/COM-registration.md`](docs/COM-registration.md).
 
