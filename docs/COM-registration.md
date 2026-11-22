@@ -46,7 +46,15 @@ antes de construir el instalador.
 
 - `HardwareInserter.AddIn` como alias de migración hacia el mismo CLSID;
 - `HKCU\Software\Solid Edge\Add-Ins\{DC87125A-6DBF-43A5-968B-2578CCBFC158}` con
-  `Description`, `Summary` y `Visible=1`.
+  `Description`, `Summary` y `Visible=1`;
+- bajo `CLSID\{DC87125A-6DBF-43A5-968B-2578CCBFC158}`: el valor `AutoConnect=1`, la categoría de
+  add-in de Solid Edge `Implemented Categories\{26B1D2D1-2B03-11D2-B589-080036E8B802}` y la de
+  entorno `Environment Categories\{26618395-09D6-11D1-BA07-080036230602}` (Assembly).
+
+Sin esas claves el CLSID no aparece en el Add-In Manager aunque exista la clave `Add-Ins`; se
+validó el conjunto, no cuál de las tres es imprescindible. Validado el 22 de noviembre de 2026 en Solid Edge 2026
+(226.00.00.106) con un registro limpio hecho por `dev/register-addin.ps1`: el add-in conecta al
+entrar en el entorno de ensamblaje y crea la pestaña «Hardware».
 
 El instalador valida por lectura estos valores y activa el CLSID antes de dar la instalación por
 correcta. La desinstalación elimina únicamente las claves anteriores y los cuatro binarios

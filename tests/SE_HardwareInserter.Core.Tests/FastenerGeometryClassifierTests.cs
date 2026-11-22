@@ -157,6 +157,74 @@ namespace SE_HardwareInserter.Core.Tests
             result.Status.Should().Be(FastenerGeometryStatus.Unsupported);
         }
 
+        /// <summary>
+        /// Datos leídos de Solid Edge 2026 para un M8x30 (vástago Ø8×30, cabeza Ø13×5): el
+        /// punto base del cilindro está en la punta (z=30) y el eje apunta fuera del material.
+        /// </summary>
+        [Theory]
+        [InlineData(30.0)]
+        [InlineData(0.0)]
+        public void Classify_TornilloConBaseEnCualquierExtremo_EligeAsientoBajoCabezaYNoLaPunta(double baseZ)
+        {
+            var shank = Cylinder(1, radius: 4, length: 30, baseZ: baseZ);
+            var headTop = Plane(2, normal: new GeometryVector3(0, 0, -1), rootZ: -5, areaMm2: 132.73, loops: 1);
+            var seat = Plane(3, normal: new GeometryVector3(0, 0, -1), rootZ: 0, areaMm2: 82.47, loops: 2);
+            var tip = Plane(4, normal: new GeometryVector3(0, 0, -1), rootZ: 30, areaMm2: 50.27, loops: 1);
+
+            var result = _classifier.Classify(9.0, new[] { shank }, new[] { headTop, seat, tip });
+
+            result.Status.Should().Be(FastenerGeometryStatus.Resolved);
+            result.CylinderSourceIndex.Should().Be(1);
+            result.PlaneSourceIndex.Should().Be(3);
+        }
+
+        /// <summary>
+        /// M12 con dw mínimo de ISO 4017 (16,63 mm): la corona de apoyo (≈104 mm²) es menor que
+        /// la sección del vástago (≈113 mm²), así que el área no sirve para distinguirla de la punta.
+        /// </summary>
+        [Fact]
+        public void Classify_AsientoConCoronaMenorQueLaSeccion_SeIdentificaPorSusContornos()
+        {
+            var seatArea = Math.PI * ((8.315 * 8.315) - 36);
+            var result = _classifier.Classify(
+                13.0,
+                new[] { Cylinder(1, radius: 6, length: 40, baseZ: 40) },
+                new[]
+                {
+                    Plane(2, normal: ZAxis, rootZ: 0, areaMm2: seatArea, loops: 2),
+                    Plane(3, normal: ZAxis, rootZ: 40, areaMm2: Math.PI * 36, loops: 1),
+                });
+
+            result.Status.Should().Be(FastenerGeometryStatus.Resolved);
+            result.PlaneSourceIndex.Should().Be(2);
+        }
+
+        [Fact]
+        public void Classify_SoloCaraExtremaSinContornoInterior_DevuelveUnsupported()
+        {
+            var result = _classifier.Classify(
+                9.0,
+                new[] { Cylinder(1, radius: 4, length: 30, baseZ: 30) },
+                new[] { Plane(2, normal: ZAxis, rootZ: 30, areaMm2: Math.PI * 16, loops: 1) });
+
+            result.Status.Should().Be(FastenerGeometryStatus.Unsupported);
+        }
+
+        [Fact]
+        public void Classify_AmbosExtremosSinContornosConocidos_DevuelveAmbiguous()
+        {
+            var result = _classifier.Classify(
+                9.0,
+                new[] { Cylinder(1, radius: 4, length: 30, baseZ: 30) },
+                new[]
+                {
+                    Plane(2, normal: ZAxis, rootZ: 0, areaMm2: 82.47),
+                    Plane(3, normal: ZAxis, rootZ: 30, areaMm2: 50.27),
+                });
+
+            result.Status.Should().Be(FastenerGeometryStatus.Ambiguous);
+        }
+
         private static GeometryVector3 ZAxis => new GeometryVector3(0, 0, 1);
 
         private static CylinderFaceDescriptor Cylinder(
@@ -177,13 +245,16 @@ namespace SE_HardwareInserter.Core.Tests
         private static PlaneFaceDescriptor Plane(
             int index,
             GeometryVector3 normal,
-            double rootZ)
+            double rootZ,
+            double areaMm2 = 100,
+            int? loops = null)
         {
             return new PlaneFaceDescriptor(
                 index,
-                areaMm2: 100,
+                areaMm2,
                 normal,
-                new GeometryVector3(0, 0, rootZ));
+                new GeometryVector3(0, 0, rootZ),
+                loops);
         }
     }
 }

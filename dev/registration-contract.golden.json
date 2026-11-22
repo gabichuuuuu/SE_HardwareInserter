@@ -20,6 +20,8 @@
     "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\InprocServer32\\1.0.0.0",
     "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\ProgId",
     "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\Implemented Categories\\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\Implemented Categories\\{26B1D2D1-2B03-11D2-B589-080036E8B802}",
+    "Software\\Classes\\CLSID\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}\\Environment Categories\\{26618395-09D6-11D1-BA07-080036230602}",
     "Software\\Solid Edge\\Add-Ins\\{DC87125A-6DBF-43A5-968B-2578CCBFC158}"
   ],
   "requiredValues": {
@@ -29,6 +31,7 @@
     "InprocServer32.Assembly": "SE_HardwareInserter.AddIn, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
     "InprocServer32.RuntimeVersion": "v4.0.30319",
     "InprocServer32.CodeBase": "${CODEBASE_URI}",
+    "Clsid.AutoConnect": 1,
     "SolidEdge.Description": "SE_HardwareInserter: inserción de tornillería y anchors desde librería local.",
     "SolidEdge.Summary": "Add-in para inserción automática de hardware en ensamblajes de Solid Edge.",
     "SolidEdge.Visible": 1

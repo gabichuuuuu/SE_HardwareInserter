@@ -36,7 +36,13 @@ namespace SE_HardwareInserter.SolidEdge
             var topologyIncomplete = false;
             try
             {
-                bodyObject = screwOccurrence.Body;
+                if (screwOccurrence.Subassembly)
+                {
+                    return ScrewGeometryResolution.CreateUnsupported(
+                        "El hardware insertado es un subconjunto; la resolución automática solo admite piezas.");
+                }
+
+                bodyObject = GetOwnedPartBody(screwOccurrence);
                 var body = bodyObject as Body;
                 if (body == null)
                 {
@@ -154,6 +160,39 @@ namespace SE_HardwareInserter.SolidEdge
             }
         }
 
+        /// <summary>
+        /// Devuelve el cuerpo de diseño de la pieza de la occurrence. <c>Occurrence.Body</c>
+        /// devuelve E_FAIL en Solid Edge 2026; la vía estable es el modelo del documento de la
+        /// occurrence. Las caras quedan en coordenadas de pieza y se referencian con
+        /// <c>AssemblyDocument.CreateReference(occurrence, face)</c>.
+        /// </summary>
+        private static object? GetOwnedPartBody(Occurrence occurrence)
+        {
+            object? document = null;
+            object? models = null;
+            object? model = null;
+            try
+            {
+                document = occurrence.OccurrenceDocument;
+                models = document switch
+                {
+                    SolidEdgePart.PartDocument part => part.Models,
+                    SolidEdgePart.SheetMetalDocument sheetMetal => sheetMetal.Models,
+                    _ => null,
+                };
+                if (!(models is SolidEdgePart.Models typedModels) || typedModels.Count < 1) return null;
+
+                model = typedModels.Item(1);
+                return (model as SolidEdgePart.Model)?.Body;
+            }
+            finally
+            {
+                ComInterop.ReleaseOwned(ref model);
+                ComInterop.ReleaseOwned(ref models);
+                ComInterop.ReleaseOwned(ref document);
+            }
+        }
+
         private static CylinderFaceDescriptor? DescribeCylinder(
             int sourceIndex,
             Face face,
@@ -198,11 +237,32 @@ namespace SE_HardwareInserter.SolidEdge
             GeometryVector3? root = TryReadVector(rootPoint, MetresToMillimetres, out var rootVector)
                 ? rootVector
                 : (GeometryVector3?)null;
+            var loopCount = TryReadLoopCount(face);
+            if (loopCount == null) return null;
             return new PlaneFaceDescriptor(
                 sourceIndex,
                 areaMm2,
                 normal,
-                root);
+                root,
+                loopCount);
+        }
+
+        private static int? TryReadLoopCount(Face face)
+        {
+            object? loopsObject = null;
+            try
+            {
+                loopsObject = face.Loops;
+                return loopsObject is Loops loops ? loops.Count : (int?)null;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return null;
+            }
+            finally
+            {
+                ComInterop.ReleaseOwned(ref loopsObject);
+            }
         }
 
         private static bool TryReadVector(Array? values, double scale, out GeometryVector3 vector)

@@ -33,8 +33,12 @@ Los logs son best-effort en `%LocalAppData%\SE_HardwareInserter\logs`, rotan a 5
 Verifica nuevas firmas y enums contra el ensamblado referenciado o type library. Comprueba las herramientas e instalación actuales; una nota histórica de `monodis` no prueba ejecución real.
 
 - `ISolidEdgeAddIn`: `OnConnection(Application, SeConnectMode, AddIn)`, `OnConnectToEnvironment`, `OnDisconnection`. Convierte el parámetro AddIn a `ISEAddInEx` para información y botones.
-- Suscribe `OnCommand/OnCommandUpdateUI` mediante `AddInEventsClass`; `ISEAddInEventsEx` no tiene el wrapper de eventos .NET.
-- CatID Assembly: `26618395-09D6-11d1-BA07-080036230602`.
+- Suscribe `OnCommand/OnCommandUpdateUI` convirtiendo `AddInEvents` a la interfaz `ISEAddInEvents_Event`; el cast a la clase `AddInEventsClass` lanza `InvalidCastException` en SE 2026 (`__ComObject` sin `IProvideClassInfo`). `ISEAddInEventsEx` no tiene el wrapper de eventos .NET.
+- CatID Assembly: `{26618395-09D6-11d1-BA07-080036230602}`, con llaves: sin ellas `SetAddInInfoEx` falla con «Class not registered».
+- Cada nombre de comando de `SetAddInInfoEx` es `"nombre interno\ntexto del botón\ntooltip"`; con un solo campo el botón queda sin texto.
+- Sin categorías COM de Solid Edge el CLSID no aparece en el Add-In Manager. El conjunto validado en SE 2026 es `Implemented Categories\{26B1D2D1-2B03-11D2-B589-080036E8B802}`, `Environment Categories\{26618395-…}` y `AutoConnect=1`; no se ha probado cuál de ellas es imprescindible (ver `docs/COM-registration.md`).
+- `Occurrence.Body` devuelve E_FAIL en SE 2026: el cuerpo se obtiene de `OccurrenceDocument.Models.Item(1).Body`.
+- Retener RCW de un documento cerrado o dejarlos al finalizador provocó cierres con error de SE 2026 al salir («The rollback event cannot allow saving…»). La ventana libera la captura en `BeforeDocumentClose`, y `Dispose` fuerza `GC.Collect`/`WaitForPendingFinalizers`. El fallo es intermitente: tras el cambio salió limpio en 3 de 3 cierres, frente a 4 fallos en 5 antes.
 - `SetAddInInfoEx` recibe `ref System.Array` para nombres e IDs, no `ref string[]` o `ref int[]`.
 - Flags: `seCmdActive_Enabled=0x1`, `seCmdActive_Remove=0x40`.
 - `Body.Faces[FeatureTopologyQueryTypeConstants.igQueryAll]` es un indexador; llamarlo como método produce `CS1955`.

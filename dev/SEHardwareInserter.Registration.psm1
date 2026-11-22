@@ -8,6 +8,9 @@ $script:RegistrationContract = [ordered]@{
     AssemblyName = 'SE_HardwareInserter.AddIn'
     AssemblyVersion = '1.0.0.0'
     ManagedCategory = '{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}'
+    # Solid Edge enumera sus add-ins por estas categorías COM; sin ellas no carga el CLSID.
+    SolidEdgeAddInCategory = '{26B1D2D1-2B03-11D2-B589-080036E8B802}'
+    AssemblyEnvironmentCategory = '{26618395-09D6-11D1-BA07-080036230602}'
     AppId = '{7B7C6B2E-9C7D-4B2E-9E2B-6F5F6F5A1B3B}'
     CurrentInstallDirectoryName = 'SE_HardwareInserter'
     LegacyInstallDirectoryName = 'HardwareInserter'
@@ -245,6 +248,7 @@ function Register-SEHardwareInserterAddIn {
             }
             Set-RegistryValues $writeRoot $expected.ClsidPath @{
                 '' = $contract.ClassName
+                'AutoConnect' = 1
             }
 
             $inprocValues = @{
@@ -261,6 +265,8 @@ function Register-SEHardwareInserterAddIn {
                 '' = $contract.CanonicalProgId
             }
             Set-RegistryValues $writeRoot "$($expected.ClsidPath)\Implemented Categories\$($contract.ManagedCategory)" @{}
+            Set-RegistryValues $writeRoot "$($expected.ClsidPath)\Implemented Categories\$($contract.SolidEdgeAddInCategory)" @{}
+            Set-RegistryValues $writeRoot "$($expected.ClsidPath)\Environment Categories\$($contract.AssemblyEnvironmentCategory)" @{}
             Set-RegistryValues $writeRoot $expected.SolidEdgePath @{
                 'Description' = 'SE_HardwareInserter: inserción de tornillería y anchors desde librería local.'
                 'Summary' = 'Add-in para inserción automática de hardware en ensamblajes de Solid Edge.'
@@ -384,7 +390,10 @@ function Test-SEHardwareInserterRegistration {
         Assert-RegistryValue $root $versionedInproc 'RuntimeVersion' 'v4.0.30319'
         Assert-RegistryValue $root $versionedInproc 'CodeBase' $expected.CodeBase
         Assert-RegistryValue $root "$($expected.ClsidPath)\ProgId" '' $contract.CanonicalProgId
+        Assert-RegistryValue $root $expected.ClsidPath 'AutoConnect' 1
         Assert-RegistryKey $root "$($expected.ClsidPath)\Implemented Categories\$($contract.ManagedCategory)"
+        Assert-RegistryKey $root "$($expected.ClsidPath)\Implemented Categories\$($contract.SolidEdgeAddInCategory)"
+        Assert-RegistryKey $root "$($expected.ClsidPath)\Environment Categories\$($contract.AssemblyEnvironmentCategory)"
         Assert-RegistryValue $root $expected.SolidEdgePath 'Description' 'SE_HardwareInserter: inserción de tornillería y anchors desde librería local.'
         Assert-RegistryValue $root $expected.SolidEdgePath 'Summary' 'Add-in para inserción automática de hardware en ensamblajes de Solid Edge.'
         Assert-RegistryValue $root $expected.SolidEdgePath 'Visible' 1

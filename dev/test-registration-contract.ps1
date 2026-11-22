@@ -42,6 +42,8 @@ $expectedGoldenPaths = @(
     "$clsidPath\InprocServer32\$($contract.AssemblyVersion)",
     "$clsidPath\ProgId",
     "$clsidPath\Implemented Categories\$($contract.ManagedCategory)",
+    "$clsidPath\Implemented Categories\$($contract.SolidEdgeAddInCategory)",
+    "$clsidPath\Environment Categories\$($contract.AssemblyEnvironmentCategory)",
     "Software\Solid Edge\Add-Ins\$($contract.Clsid)"
 )
 if ((@($golden.registryPaths | Sort-Object) -join "`n") -ne
@@ -56,6 +58,7 @@ $requiredGoldenValues = [ordered]@{
     'InprocServer32.Assembly' = $expectedAssembly
     'InprocServer32.RuntimeVersion' = 'v4.0.30319'
     'InprocServer32.CodeBase' = '${CODEBASE_URI}'
+    'Clsid.AutoConnect' = 1
     'SolidEdge.Description' = 'SE_HardwareInserter: inserción de tornillería y anchors desde librería local.'
     'SolidEdge.Summary' = 'Add-in para inserción automática de hardware en ensamblajes de Solid Edge.'
     'SolidEdge.Visible' = 1
@@ -77,6 +80,11 @@ $requiredFragments = @(
     "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0",
     "Software\Classes\CLSID\{#AddInClsid}\ProgId",
     "Implemented Categories\{#ManagedCategory}",
+    "Implemented Categories\{#SolidEdgeAddInCategory}",
+    "Environment Categories\{#AssemblyEnvironmentCategory}",
+    "RegistryDwordEquals(ClsidPath, 'AutoConnect', 1)",
+    "#define SolidEdgeAddInCategoryText `"$($contract.SolidEdgeAddInCategory)`"",
+    "#define AssemblyEnvironmentCategoryText `"$($contract.AssemblyEnvironmentCategory)`"",
     "Software\Solid Edge\Add-Ins\{#AddInClsid}",
     "Source: `"..\dev\installer-helper.ps1`"; Flags: dontcopy",
     "{sysnative}\WindowsPowerShell\v1.0\powershell.exe",

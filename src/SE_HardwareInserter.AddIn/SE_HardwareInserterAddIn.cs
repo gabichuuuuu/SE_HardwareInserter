@@ -28,7 +28,7 @@ namespace SE_HardwareInserter.AddIn
     public sealed class SE_HardwareInserterAddIn : ISolidEdgeAddIn, IDisposable
     {
         /// <summary>GUID del entorno de ensamblaje de Solid Edge (SolidEdgeSDK.EnvironmentCategories.Assembly).</summary>
-        private const string AssemblyEnvCatId = "26618395-09D6-11d1-BA07-080036230602";
+        private const string AssemblyEnvCatId = "{26618395-09D6-11d1-BA07-080036230602}";
 
         /// <summary>Nombre de la categoría/pestaña donde aparece el botón en la ribbon de Solid Edge.</summary>
         private const string RibbonCategory = "Hardware";
@@ -40,7 +40,7 @@ namespace SE_HardwareInserter.AddIn
         private const int CmdInsertarHardware = 33000;
 
         private Application? _application;
-        private AddInEventsClass? _addInEvents;
+        private ISEAddInEvents_Event? _addInEvents;
         private HardwarePickerWindow? _pickerWindow;
         private SolidEdgeHelper? _solidEdgeHelper;
         private IAppLogger _logger = NullAppLogger.Instance;
@@ -53,6 +53,7 @@ namespace SE_HardwareInserter.AddIn
         /// </summary>
         public void OnConnection(object Application, SeConnectMode ConnectMode, SolidEdgeFramework.AddIn AddInInstance)
         {
+            var step = "logger";
             try
             {
                 _logger = new FileAppLogger();
@@ -61,34 +62,48 @@ namespace SE_HardwareInserter.AddIn
 
                 _solidEdgeHelper = new SolidEdgeHelper(new IndexBasedScrewGeometryResolver(), _logger);
 
-            // Suscribir eventos de comando del add-in.
-            var addInEx = (ISEAddInEx)AddInInstance;
-            _addInEvents = (AddInEventsClass)addInEx.AddInEvents;
-            _addInEvents.OnCommand += OnCommand;
-            _addInEvents.OnCommandUpdateUI += OnCommandUpdateUI;
+                // Solid Edge devuelve un __ComObject sin IProvideClassInfo: no admite cast a la
+                // clase AddInEventsClass, solo a la interfaz de eventos (QueryInterface sobre
+                // IConnectionPointContainer). Validado en SE 2026.
+                step = "events";
+                var addInEx = (ISEAddInEx)AddInInstance;
+                _addInEvents = (ISEAddInEvents_Event)addInEx.AddInEvents;
+                _addInEvents.OnCommand += OnCommand;
+                _addInEvents.OnCommandUpdateUI += OnCommandUpdateUI;
 
-            // Registrar el comando en la ribbon del entorno de ensamblaje.
-            Array commandNames = new string[] { "Insertar Hardware" };
-            Array commandIds = new int[] { CmdInsertarHardware };
+                // Registrar el comando en la ribbon del entorno de ensamblaje.
+                step = "SetAddInInfoEx";
+                // Formato de Solid Edge: "nombre interno\ntexto del botón\ntooltip".
+                Array commandNames = new string[]
+                {
+                    "SEHardwareInserter_Insert\nInsertar Hardware\nInserta tornillería desde la librería local",
+                };
+                Array commandIds = new int[] { CmdInsertarHardware };
 
-            addInEx.SetAddInInfoEx(
-                ResourceFilename: GetType().Assembly.Location,
-                EnvironmentCatID: AssemblyEnvCatId,
-                CategoryName: RibbonCategory,
-                IDColorBitmapMedium: 0,
-                IDColorBitmapLarge: 0,
-                IDMonochromeBitmapMedium: 0,
-                IDMonochromeBitmapLarge: 0,
-                NumberOfCommands: 1,
-                CommandNames: ref commandNames,
-                CommandIDs: ref commandIds);
+                addInEx.SetAddInInfoEx(
+                    ResourceFilename: GetType().Assembly.Location,
+                    EnvironmentCatID: AssemblyEnvCatId,
+                    CategoryName: RibbonCategory,
+                    IDColorBitmapMedium: 0,
+                    IDColorBitmapLarge: 0,
+                    IDMonochromeBitmapMedium: 0,
+                    IDMonochromeBitmapLarge: 0,
+                    NumberOfCommands: 1,
+                    CommandNames: ref commandNames,
+                    CommandIDs: ref commandIds);
 
+                step = "AddCommandBarButton";
                 addInEx.AddCommandBarButton(AssemblyEnvCatId, CommandBarName, CmdInsertarHardware);
                 _logger.Info(_lifecycleOperationId, "connection", "Add-in conectado y comando registrado.");
             }
             catch (Exception ex)
             {
-                _logger.Error(_lifecycleOperationId, "connection", "Falló la conexión del add-in.", ex);
+                _logger.Error(
+                    _lifecycleOperationId,
+                    "connection",
+                    "Falló la conexión del add-in.",
+                    ex,
+                    new System.Collections.Generic.Dictionary<string, string> { ["step"] = step });
                 CleanupOwnedState("connection-cleanup");
                 _logger.Info(_lifecycleOperationId, "connection-cleanup", "Cleanup de conexión finalizado.");
                 _logger = NullAppLogger.Instance;
@@ -237,6 +252,15 @@ namespace SE_HardwareInserter.AddIn
             {
                 _solidEdgeHelper = null;
                 _application = null;
+
+                // Los RCW que queden sin liberar explícitamente se liberarían en el finalizador
+                // del CLR cuando Solid Edge ya está desmontando sus objetos. Forzarlo aquí, con
+                // Solid Edge aún operativo, evita llamadas Release tardías al proceso anfitrión.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
                 _logger.Info(_lifecycleOperationId, "disconnection", "Add-in desconectado.");
                 _logger = NullAppLogger.Instance;
             }

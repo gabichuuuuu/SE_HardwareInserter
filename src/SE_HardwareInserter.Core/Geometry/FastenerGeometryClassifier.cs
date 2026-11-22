@@ -73,12 +73,29 @@ namespace SE_HardwareInserter.Core.Geometry
             double areaMm2,
             GeometryVector3 normal,
             GeometryVector3? rootPoint)
+            : this(sourceIndex, areaMm2, normal, rootPoint, loopCount: null)
+        {
+        }
+
+        public PlaneFaceDescriptor(
+            int sourceIndex,
+            double areaMm2,
+            GeometryVector3 normal,
+            GeometryVector3? rootPoint,
+            int? loopCount)
         {
             SourceIndex = sourceIndex;
             AreaMm2 = areaMm2;
             Normal = normal;
             RootPoint = rootPoint;
+            LoopCount = loopCount;
         }
+
+        /// <summary>
+        /// Número de contornos de la cara, o null si no se conoce. Un asiento rodea el vástago y
+        /// tiene al menos dos (exterior e interior); la punta del vástago es un disco con uno.
+        /// </summary>
+        public int? LoopCount { get; }
 
         public int SourceIndex { get; }
 
@@ -132,8 +149,7 @@ namespace SE_HardwareInserter.Core.Geometry
         private const double DiameterToleranceMm = 0.05;
         private const double MinimumDiameterRatio = 0.75;
         private const double MinimumDominanceRatio = 1.25;
-        private const double MaximumParallelAngleRadians = Math.PI / 180.0;
-        private static readonly double MinimumParallelDot = Math.Cos(MaximumParallelAngleRadians);
+        private const double MaximumParallelAngleRadians = Math.PI / 180.0;        private static readonly double MinimumParallelDot = Math.Cos(MaximumParallelAngleRadians);
 
         /// <summary>Clasifica las parejas cilindro/plano sin acceder a objetos COM.</summary>
         public FastenerGeometryClassification Classify(
@@ -292,12 +308,22 @@ namespace SE_HardwareInserter.Core.Geometry
                 return PairCompatibility.Unverified;
             }
 
+            // Un asiento rodea el vástago (contorno interior). La punta es un disco de un solo
+            // contorno y no puede apoyar sobre la pieza agujereada. El área no discrimina: con el
+            // dw mínimo de ISO 4017 desde M12 la corona de apoyo es menor que la sección.
+            if (plane.LoopCount.HasValue && plane.LoopCount.Value < 2)
+            {
+                return PairCompatibility.Incompatible;
+            }
+
             var proximityScore = 0.0;
             {
+                // Solid Edge 2026 puede situar el punto base en cualquiera de los dos extremos y
+                // orientar el eje hacia fuera del material: el otro extremo queda a ±longitud.
                 var delta = Subtract(plane.RootPoint.Value, cylinder.BasePoint.Value);
-                var projectedDistance = GeometryVector3.Dot(delta, normalizedAxis);
+                var projectedDistance = Math.Abs(GeometryVector3.Dot(delta, normalizedAxis));
                 var distanceToEnd = Math.Min(
-                    Math.Abs(projectedDistance),
+                    projectedDistance,
                     Math.Abs(projectedDistance - estimatedLengthMm));
                 var allowedDistance = Math.Max(0.25, Math.Min(1.0, estimatedLengthMm * 0.10));
                 if (distanceToEnd > allowedDistance)

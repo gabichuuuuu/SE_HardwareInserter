@@ -34,6 +34,7 @@ namespace SE_HardwareInserter.AddIn.UI
         private Exception? _pendingLibraryError;
         private CapturedHoleGeometry? _capturedHole;
         private InsertionSession? _pendingInsertion;
+        private ISEApplicationEvents_Event? _applicationEvents;
         private bool _busy;
         private bool _copyInProgress;
         private bool _forceClosing;
@@ -72,6 +73,7 @@ namespace SE_HardwareInserter.AddIn.UI
             RootPathBox.Text = _library.RootPath;
 
             SubscribeLibrary(_library);
+            SubscribeApplicationEvents();
             RefreshTree();
             UpdateUiState();
         }
@@ -749,8 +751,76 @@ namespace SE_HardwareInserter.AddIn.UI
             base.OnClosing(e);
         }
 
+        private void SubscribeApplicationEvents()
+        {
+            try
+            {
+                _applicationEvents = (ISEApplicationEvents_Event)_solidEdgeApp.ApplicationEvents;
+                _applicationEvents.BeforeDocumentClose += OnBeforeDocumentClose;
+            }
+            catch (Exception ex)
+            {
+                _applicationEvents = null;
+                LogError(
+                    Guid.NewGuid().ToString("N"),
+                    "events",
+                    "No se pudo suscribir BeforeDocumentClose; la captura se liberará al cerrar la ventana.",
+                    ex,
+                    "unavailable",
+                    "unavailable");
+            }
+        }
+
+        private void UnsubscribeApplicationEvents()
+        {
+            var events = _applicationEvents;
+            _applicationEvents = null;
+            if (events == null) return;
+            try
+            {
+                events.BeforeDocumentClose -= OnBeforeDocumentClose;
+            }
+            catch (Exception)
+            {
+                // Durante la descarga Solid Edge puede haber liberado ya el punto de conexión.
+            }
+        }
+
+        /// <summary>
+        /// Libera la captura y revierte la inserción pendiente antes de que Solid Edge cierre su
+        /// documento. Retener esas Reference tras el cierre provoca un fallo de Solid Edge 2026 al
+        /// salir («The rollback event cannot allow saving…»), reproducido tres veces.
+        /// </summary>
+        private void OnBeforeDocumentClose(object theDocument)
+        {
+            try
+            {
+                var capturedHole = _capturedHole;
+                if (theDocument == null || capturedHole == null || !capturedHole.BelongsTo(theDocument)) return;
+
+                // Una inserción pendiente siempre pertenece al ensamblaje de la captura.
+                DisposePendingInsertion();
+                _capturedHole = null;
+                capturedHole.Dispose();
+                HoleInfo.Text = "Agujero: no capturado";
+                StatusText.Text = "Se cerró el ensamblaje de la captura; vuelva a capturar el agujero.";
+                UpdateUiState();
+            }
+            catch (Exception ex)
+            {
+                LogError(
+                    Guid.NewGuid().ToString("N"),
+                    "document-close",
+                    "No se pudo liberar la captura al cerrar su documento.",
+                    ex,
+                    "unavailable",
+                    "unavailable");
+            }
+        }
+
         protected override void OnClosed(EventArgs e)
         {
+            UnsubscribeApplicationEvents();
             DisposePendingInsertion();
             _capturedHole?.Dispose();
             _capturedHole = null;

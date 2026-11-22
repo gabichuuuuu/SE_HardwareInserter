@@ -27,6 +27,11 @@
 #define AddInClsid "{{DC87125A-6DBF-43A5-968B-2578CCBFC158}"
 #define AddInClsidText "{DC87125A-6DBF-43A5-968B-2578CCBFC158}"
 #define ManagedCategory "{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
+; Solid Edge enumera sus add-ins por estas categorías COM; sin ellas no carga el CLSID.
+#define SolidEdgeAddInCategory "{{26B1D2D1-2B03-11D2-B589-080036E8B802}"
+#define SolidEdgeAddInCategoryText "{26B1D2D1-2B03-11D2-B589-080036E8B802}"
+#define AssemblyEnvironmentCategory "{{26618395-09D6-11D1-BA07-080036230602}"
+#define AssemblyEnvironmentCategoryText "{26618395-09D6-11D1-BA07-080036230602}"
 
 [Setup]
 AppId={#MyAppId}
@@ -85,6 +90,9 @@ Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetAddInCodeBase}"
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\ProgId"; ValueType: string; ValueName: ""; ValueData: "SE_HardwareInserter.AddIn"
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Implemented Categories\{#ManagedCategory}"; ValueType: none
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: dword; ValueName: "AutoConnect"; ValueData: "1"
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Implemented Categories\{#SolidEdgeAddInCategory}"; ValueType: none
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Environment Categories\{#AssemblyEnvironmentCategory}"; ValueType: none
 Root: HKCU64; Subkey: "Software\Solid Edge\Add-Ins\{#AddInClsid}"; ValueType: string; ValueName: "Description"; ValueData: "SE_HardwareInserter: inserción de tornillería y anchors desde librería local."; Flags: uninsdeletekey
 Root: HKCU64; Subkey: "Software\Solid Edge\Add-Ins\{#AddInClsid}"; ValueType: string; ValueName: "Summary"; ValueData: "Add-in para inserción automática de hardware en ensamblajes de Solid Edge."
 Root: HKCU64; Subkey: "Software\Solid Edge\Add-Ins\{#AddInClsid}"; ValueType: dword; ValueName: "Visible"; ValueData: "1"
@@ -289,6 +297,9 @@ begin
     RegistryStringEquals(VersionedInprocPath, 'CodeBase', GetAddInCodeBase('')) and
     RegistryStringEquals(ClsidPath + '\ProgId', '', 'SE_HardwareInserter.AddIn') and
     RegKeyExists(HKCU64, ClsidPath + '\Implemented Categories\{#ManagedCategory}') and
+    RegistryDwordEquals(ClsidPath, 'AutoConnect', 1) and
+    RegKeyExists(HKCU64, ClsidPath + '\Implemented Categories\{#SolidEdgeAddInCategoryText}') and
+    RegKeyExists(HKCU64, ClsidPath + '\Environment Categories\{#AssemblyEnvironmentCategoryText}') and
     RegistryStringEquals(SolidEdgePath, 'Description',
       'SE_HardwareInserter: inserción de tornillería y anchors desde librería local.') and
     RegistryStringEquals(SolidEdgePath, 'Summary',

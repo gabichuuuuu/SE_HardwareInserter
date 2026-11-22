@@ -81,6 +81,17 @@ namespace SE_HardwareInserter.SolidEdge
         /// <summary>Diámetro del agujero en milímetros.</summary>
         public double DiameterMm { get; }
 
+        /// <summary>
+        /// Indica si la captura pertenece al documento indicado (identidad COM). El documento es
+        /// prestado: no se libera aquí. Una captura liberada no pertenece a ningún documento.
+        /// </summary>
+        public bool BelongsTo(object document)
+        {
+            if (document == null) throw new ArgumentNullException(nameof(document));
+            var own = _assemblyDocument;
+            return !_disposed && own != null && ComInterop.HasSameIdentity(own, document);
+        }
+
         /// <inheritdoc />
         public void Dispose()
         {
