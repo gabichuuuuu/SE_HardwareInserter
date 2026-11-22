@@ -28,9 +28,13 @@ jobs:
       checksums: ${{ steps.version.outputs.checksums }}
     env:
       BUILD_OUTPUT: src\SE_HardwareInserter.AddIn\bin\x64\Release\net48
-      STAGE_DIRECTORY: ${{ runner.temp }}\se-hardware-inserter-stage
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
+      # El contexto runner no existe en el env del job: las rutas temporales se fijan aquí.
+      - name: Set runner temp paths
+        shell: pwsh
+        run: |
+          "STAGE_DIRECTORY=$env:RUNNER_TEMP\se-hardware-inserter-stage" >> $env:GITHUB_ENV
       - name: Checkout tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -113,17 +117,20 @@ jobs:
       INSTALLER_NAME: ${{ needs.build-test.outputs.installer }}
       SBOM_NAME: ${{ needs.build-test.outputs.sbom }}
       CHECKSUMS_NAME: ${{ needs.build-test.outputs.checksums }}
-      STAGE_DIRECTORY: ${{ runner.temp }}\se-hardware-inserter-stage
-      RELEASE_DIRECTORY: ${{ runner.temp }}\se-hardware-inserter-release
-      INNO_DIRECTORY: ${{ runner.temp }}\inno-setup-6.7.3
-      SBOM_TOOL_DIRECTORY: ${{ runner.temp }}\sbom-tool
-      SBOM_INPUT_DIRECTORY: ${{ runner.temp }}\se-hardware-inserter-sbom-input
       SIGNING_EXPECTED_SUBJECT: ${{ vars.AZURE_ARTIFACT_SIGNING_EXPECTED_SUBJECT }}
     # Environment secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
     # Environment variables: AZURE_ARTIFACT_SIGNING_ENDPOINT,
     # AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME, AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME,
     # AZURE_ARTIFACT_SIGNING_EXPECTED_SUBJECT (full DN or one complete DN component such as CN=...).
     steps:
+      - name: Set runner temp paths
+        shell: pwsh
+        run: |
+          "STAGE_DIRECTORY=$env:RUNNER_TEMP\se-hardware-inserter-stage" >> $env:GITHUB_ENV
+          "RELEASE_DIRECTORY=$env:RUNNER_TEMP\se-hardware-inserter-release" >> $env:GITHUB_ENV
+          "INNO_DIRECTORY=$env:RUNNER_TEMP\inno-setup-6.7.3" >> $env:GITHUB_ENV
+          "SBOM_TOOL_DIRECTORY=$env:RUNNER_TEMP\sbom-tool" >> $env:GITHUB_ENV
+          "SBOM_INPUT_DIRECTORY=$env:RUNNER_TEMP\se-hardware-inserter-sbom-input" >> $env:GITHUB_ENV
       - name: Checkout tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup project .NET from global.json
@@ -263,8 +270,11 @@ jobs:
       INSTALLER_NAME: ${{ needs.build-test.outputs.installer }}
       SBOM_NAME: ${{ needs.build-test.outputs.sbom }}
       CHECKSUMS_NAME: ${{ needs.build-test.outputs.checksums }}
-      RELEASE_DIRECTORY: ${{ runner.temp }}\se-hardware-inserter-release
     steps:
+      - name: Set runner temp paths
+        shell: pwsh
+        run: |
+          "RELEASE_DIRECTORY=$env:RUNNER_TEMP\se-hardware-inserter-release" >> $env:GITHUB_ENV
       - name: Download signed release evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
