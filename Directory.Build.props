@@ -25,6 +25,13 @@
 
     <!-- Cada restore genera o actualiza el lock file; el modo bloqueado se activará al estabilizar el grafo. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!--
+      El SDK solo añade Microsoft.NETFramework.ReferenceAssemblies cuando el equipo no tiene el
+      targeting pack de .NET Framework 4.8, así que los locks dependían de la máquina (NU1004 en
+      runners con el pack). La referencia explícita de abajo ya aporta los ensamblados.
+    -->
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
