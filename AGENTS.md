@@ -1,153 +1,70 @@
-# AGENTS.md
+# SE_HardwareInserter: instrucciones del proyecto
 
-Compact guidance for agents working in this repo. For full architecture narrative,
-see `CLAUDE.md` (verified accurate against source).
+`AGENTS.md` es la única fuente de instrucciones para todos los agentes; Claude Code la carga mediante `agents-md`. No crees `CLAUDE.md`: desactivaría esa carga. Consulta solo el código y documentación relacionados con la tarea.
 
-## Commands
+## Arquitectura y compatibilidad
 
-```bash
-# Build whole solution (note: .slnx format, not .sln)
-dotnet build HardwareInserter.slnx
+Add-in COM cargado por Solid Edge mediante `ISolidEdgeAddIn.OnConnection`; recibe la instancia de `Application`. No es una macro ni un EXE y no obtiene la aplicación mediante `Marshal.GetActiveObject`. Abre la ventana WPF no modal `HardwarePickerWindow` desde la ribbon de ensamblaje.
 
-# Build a single project
-dotnet build src/HardwareInserter.Core/HardwareInserter.Core.csproj
-dotnet build src/HardwareInserter.AddIn/HardwareInserter.AddIn.csproj -p:Platform=x64
+| Proyecto | Responsabilidad |
+| --- | --- |
+| `SE_HardwareInserter.Core` | Dominio, `FileSystemFastenerLibrary`, `Settings/SettingsStore`, `LocalHardwareCache/LocalHardwareCopy`; sin COM |
+| `SE_HardwareInserter.SolidEdge` | Captura, inserción, restricciones y resolución geométrica con interop |
+| `SE_HardwareInserter.AddIn` | Ciclo de vida COM, WPF y coordinación de Core con Solid Edge |
+| `SE_HardwareInserter.Core.Tests` | xUnit y FluentAssertions; lógica sin COM |
 
-# Run all tests
-dotnet test tests/HardwareInserter.Core.Tests/HardwareInserter.Core.Tests.csproj
+- `Directory.Build.props` fija `net48`, C# 9, nullable y errores de nulabilidad. Conserva esos límites por compatibilidad COM; una skill genérica no autoriza migrarlos.
+- Compila el add-in en x64. `Interop.SolidEdge` usa `EmbedInteropTypes=false` y se distribuye con el add-in; cambiarlo exige validar registro, eventos y arranque reales.
+- La solución es `SE_HardwareInserter.slnx`. Los cuatro locks de NuGet están versionados: restauración bloqueada en builds normales y CI. Solo en un cambio de dependencias autorizado, restaura sin bloqueo, revisa los cuatro diffs y vuelve a `--locked-mode`.
+- Comentarios y XML docs en español; identificadores en inglés. Documenta contratos públicos y decisiones no evidentes. `GenerateDocumentationFile=true` y `NoWarn 1591` no convierten cada detalle interno en documentación obligatoria.
 
-# Run a single test by partial method name
-dotnet test tests/HardwareInserter.Core.Tests/ --filter "FullyQualifiedName~Refresh_CarpetaConPar"
-```
+## Biblioteca, inserción y recursos
 
-## Register/unregister the add-in (Windows, PowerShell)
+El catálogo escanea recursivamente archivos `*.par`; no usa índice JSON ni importación Excel. El usuario elige la raíz con «Carpeta...» y se guarda únicamente `RootPath` en `%AppData%\SE_HardwareInserter\settings.json`. El watcher conserva el árbol vivo, `RelativePath` y `Filename` sin inferir metadatos de nombres.
+
+Antes de insertar, `LocalHardwareCache.EnsureLocalCopy` crea una copia inmutable por SHA-256 en `Hardware/.se-hardware-inserter/<verified-hash-prefix>/`. El manifiesto usa rutas relativas al ensamblaje. No sobrescribas archivos legacy de `Hardware/`; pasa `LocalHardwareCopy.LocalPath` a Solid Edge.
+
+Solo el trabajo de copia se ejecuta fuera del hilo STA; las llamadas COM vuelven al hilo de Solid Edge. Conserva captura de la cara cilíndrica del agujero y apoyo opcional, clasificación geométrica y flujo automática → selección guiada → conservar libre o cancelar. Ambigüedad o topología insuficiente no autorizan escoger una cara arbitraria. Cerrar la ventana revierte la occurrence pendiente.
+
+Los logs son best-effort en `%LocalAppData%\SE_HardwareInserter\logs`, rotan a 5 MB y se conservan 14 días. `operationId` relaciona copia, inserción, restricciones, commit y rollback.
+
+## Contratos COM
+
+Verifica nuevas firmas y enums contra el ensamblado referenciado o type library. Comprueba las herramientas e instalación actuales; una nota histórica de `monodis` no prueba ejecución real.
+
+- `ISolidEdgeAddIn`: `OnConnection(Application, SeConnectMode, AddIn)`, `OnConnectToEnvironment`, `OnDisconnection`. Convierte el parámetro AddIn a `ISEAddInEx` para información y botones.
+- Suscribe `OnCommand/OnCommandUpdateUI` convirtiendo `AddInEvents` a la interfaz `ISEAddInEvents_Event`; el cast a la clase `AddInEventsClass` lanza `InvalidCastException` en SE 2026 (`__ComObject` sin `IProvideClassInfo`). `ISEAddInEventsEx` no tiene el wrapper de eventos .NET.
+- CatID Assembly: `{26618395-09D6-11d1-BA07-080036230602}`, con llaves: sin ellas `SetAddInInfoEx` falla con «Class not registered».
+- Cada nombre de comando de `SetAddInInfoEx` es `"nombre interno\ntexto del botón\ntooltip"`; con un solo campo el botón queda sin texto.
+- Sin categorías COM de Solid Edge el CLSID no aparece en el Add-In Manager. El conjunto validado en SE 2026 es `Implemented Categories\{26B1D2D1-2B03-11D2-B589-080036E8B802}`, `Environment Categories\{26618395-…}` y `AutoConnect=1`; no se ha probado cuál de ellas es imprescindible (ver `docs/COM-registration.md`).
+- `Occurrence.Body` devuelve E_FAIL en SE 2026: el cuerpo se obtiene de `OccurrenceDocument.Models.Item(1).Body`.
+- Retener RCW de un documento cerrado o dejarlos al finalizador provocó cierres con error de SE 2026 al salir («The rollback event cannot allow saving…»). La ventana libera la captura en `BeforeDocumentClose`, y `Dispose` fuerza `GC.Collect`/`WaitForPendingFinalizers`. El fallo es intermitente: tras el cambio salió limpio en 3 de 3 cierres, frente a 4 fallos en 5 antes.
+- `SetAddInInfoEx` recibe `ref System.Array` para nombres e IDs, no `ref string[]` o `ref int[]`.
+- Flags: `seCmdActive_Enabled=0x1`, `seCmdActive_Remove=0x40`.
+- `Body.Faces[FeatureTopologyQueryTypeConstants.igQueryAll]` es un indexador; llamarlo como método produce `CS1955`.
+- Para inserción/captura consulta `Occurrences.AddByFilename`, `Relations3d.AddAxial/AddPlanar`, `Occurrence.Body`, `Face.Geometry/Area`, `AssemblyDocument.Path/Occurrences/Relations3d` y `Application.ActiveDocument/ActiveSelectSet` en la interop efectiva.
+
+La conversión de metros a mm usa 1000; valida unidades contra un documento real antes de aceptar medidas. La clasificación geométrica, ribbon y compatibilidad SE2022-SE2026 necesitan aceptación real. Si no aparece el botón, comprueba HKCU, bitmap e identificador del entorno. La versión NuGet 220.2.0 por sí sola no demuestra compatibilidad de runtime.
+
+## Comandos y validación
 
 ```powershell
-# Compile (x64) + register COM in HKCU (no admin needed)
-.\dev\register-addin.ps1
-.\dev\register-addin.ps1 -Config Release
-
-# Unregister
-.\dev\unregister-addin.ps1
+dotnet restore SE_HardwareInserter.slnx --locked-mode
+dotnet build src/SE_HardwareInserter.AddIn/SE_HardwareInserter.AddIn.csproj -c Debug -p:Platform=x64 --no-restore
+dotnet test tests/SE_HardwareInserter.Core.Tests/SE_HardwareInserter.Core.Tests.csproj --no-restore
+.\dev\check-prerequisites.ps1
 ```
 
-## Toolchain quirks (these bite)
+Usa `--filter "FullyQualifiedName~<nombre>"` para una regresión concreta y `-Profile Packaging` en el diagnóstico de empaquetado. En implementación completa el comportamiento solicitado y corrige fallos propios con comprobaciones pertinentes. En cambios solo de instrucciones revisa diff y referencias; no requiere compilar o registrar COM.
 
-- **Target is `net48` with C# 9**, fixed in `Directory.Build.props`. Do not use C# 10+ syntax.
-  Pinned to net48 for Solid Edge COM interop compatibility — do not bump.
-- **`Nullable` is `enable` AND `WarningsAsErrors` for `Nullable`** (`Directory.Build.props`).
-  Any nullability warning fails the build. Wire nullability annotations correctly on every change.
-- **Solution file is `.slnx`** (XML-based sln format), not `.sln`. Always pass `HardwareInserter.slnx`.
-- **`Interop.SolidEdge` uses `EmbedInteropTypes=false`** in `HardwareInserter.SolidEdge` and
-  `HardwareInserter.AddIn`: the `Interop.SolidEdge.dll` from NuGet is copied to the output directory
-  and distributed with the add-in. This is required because `EmbedInteropTypes=true` does not
-  generate .NET event wrappers for COM source interfaces (`ISEAddInEvents`), so `+=` on
-  `AddInEventsClass.OnCommand` fails with `CS1656`. With `false`, the full interop DLL (including
-  the `AddInEventsClass` coclass with event accessors) is available.
-- **Build platform is `x64`**: Solid Edge is 64-bit since 2020. The add-in must match. Always build
-  with `-p:Platform=x64` and register with the Framework64 `RegAsm.exe`.
+En Linux puede faltar `testhost.net48.exe`. Usa Windows o un runner Mono/xUnit compatible existente; no añadas y reviertas paquetes por rutina para sortear el host. Declara qué prueba no pudo ejecutarse. Tests de lógica o gateways simulados no demuestran integración COM.
 
-## Test runner gotcha on Linux (critical)
+Registro local autorizado: `dev/register-addin.ps1` (opcional `-Config Release`); retirada: `dev/unregister-addin.ps1`. Usan el contrato per-user HKCU de 64 bits en `dev/SEHardwareInserter.Registration.psm1`; RegAsm solo regenera el golden. Estos comandos modifican registro y no son checks documentales.
 
-`dotnet test` against `net48` on Linux fails with `Cannot open assembly '.../testhost.net48.exe'`
-(the net48 testhost is not shipped with the .NET SDK on Linux). Workaround: build the test DLL,
-then run it under Mono with the xUnit console runner:
+## Publicación
 
-```bash
-mono ~/.nuget/packages/xunit.runner.console/<version>/tools/net48/xunit.console.exe \
-  tests/HardwareInserter.Core.Tests/bin/Debug/net48/HardwareInserter.Core.Tests.dll
-```
+Para release consulta `validation/solid-edge/README.md`. Conserva build/tests Windows x64 y CodeQL en PRs/pushes a main. Dependabot actualiza NuGet y Actions contra main.
 
-`xunit.runner.console` is NOT a project dependency — it is already in the NuGet cache from a prior
-`dotnet add package` on the test project (then reverted). If missing, add it temporarily, run,
-then revert the `.csproj` change. Never leave it as a permanent dependency.
+Una release firmada exige Azure Artifact Signing, perfil Public Trust y OIDC validados. El tag apunta al commit exclusivo con evidencias `SE2022.json`–`SE2026.json`; su padre es el `sourceCommitSha` validado y ese commit no admite otros cambios. El candidato unsigned de CI queda ligado a `GITHUB_SHA` por `source-commit.txt` y solo sirve para la matriz; release reconstruye locked, firma el binario final y ejecuta su smoke.
 
-There are no tests for `HardwareInserter.SolidEdge` or `HardwareInserter.AddIn` and there cannot be
-without a real Solid Edge installation (COM interop). Do not attempt to add unit tests that touch
-`SolidEdge.*` types.
-
-## Architecture: COM add-in (not a standalone macro)
-
-`HardwareInserter.AddIn` is a **registered COM add-in**, NOT a standalone EXE. Solid Edge loads it
-on startup via `ISolidEdgeAddIn.OnConnection` and calls `OnCommand` when the user clicks the ribbon
-button. The add-in opens a WPF `HardwarePickerWindow` (non-modal) that floats over Solid Edge.
-
-Runtime: Solid Edge must be running. The add-in is loaded automatically by Solid Edge when
-registered in `HKCU\Software\Solid Edge\Add-Ins\{CLSID}`. No `Marshal.GetActiveObject` — the
-`Application` instance arrives via `OnConnection`.
-
-### Add-in contract (verified by `monodis`)
-
-- `ISolidEdgeAddIn`: `OnConnection(Application, SeConnectMode, AddIn)` / `OnConnectToEnvironment` /
-  `OnDisconnection`. The `AddIn` parameter must be cast to `ISEAddInEx` to access
-  `SetAddInInfoEx` / `AddCommandBarButton`.
-- `AddInEventsClass` (NOT `ISEAddInEventsEx`): cast `addInEx.AddInEvents` to `AddInEventsClass`
-  and subscribe `OnCommand`/`OnCommandUpdateUI` with `+=`. The `Ex` interface has no `.NET` event
-  wrapper generated by tlbimp.
-- Assembly environment CatID: `26618395-09D6-11d1-BA07-080036230602`
-  (`SolidEdgeSDK.EnvironmentCategories.Assembly`, extracted from the interop DLL's `.cctor`).
-- `SetAddInInfoEx` takes `ref System.Array` (not `ref string[]`/`ref int[]`) for `CommandNames`/
-  `CommandIDs`. Declare as `Array commandNames = new string[] {...}`.
-- `OnCommandUpdateUI` flags: `seCmdActive_Enabled = 0x1`, `seCmdActive_Remove = 0x40`.
-
-## Verifying Solid Edge API signatures
-
-There is no Solid Edge installed in the dev environment. When adding NEW calls to the
-`Interop.SolidEdge` API, verify the signature by disassembling the community interop DLL before
-assuming:
-
-```bash
-monodis ~/.nuget/packages/interop.solidedge/220.2.0/lib/net45/Interop.SolidEdge.dll
-```
-
-Known-verified signatures: `Occurrences.AddByFilename`, `Relations3d.AddAxial/AddPlanar`,
-`Occurrence.Body`, `Face.Geometry/Area`, `AssemblyDocument.Path/Occurrences/Relations3d`,
-`Application.ActiveDocument/ActiveSelectSet`, `ISolidEdgeAddIn.OnConnection/OnDisconnection`,
-`ISEAddInEx.SetAddInInfoEx/AddCommandBarButton/AddInEvents`, `AddInEventsClass.OnCommand/OnCommandUpdateUI`.
-
-**Gotcha:** `Body.Faces[FeatureTopologyQueryTypeConstants.igQueryAll]` is a C# **indexer, not a
-method**. Calling it as `Faces(...)` triggers `CS1955`. Index it with `[]`.
-
-## Risk areas (cannot be validated without real Solid Edge)
-
-- **Units**: `SolidEdgeHelper` assumes the API returns lengths in meters and converts to mm via
-  `MetrosAMilimetros = 1000.0` (`SolidEdgeHelper.cs:88`). Validate against a real document before
-  trusting the displayed diameter.
-- **Screw face resolution** (`IndexBasedScrewGeometryResolver`): Solid Edge has no generic API to
-  tell which face of a freshly inserted `.par` is the shank axis vs. the head seat. Default impl
-  uses a heuristic (largest cylindrical face = axis, largest planar face = seat) over
-  `Occurrence.Body.Faces[igQueryAll]`. If the `.par` templates use consistent face naming, replace
-  this class with a name-based `IScrewGeometryResolver` — the rest of the flow is unchanged.
-- **Add-in ribbon registration**: `SetAddInInfoEx` / `AddCommandBarButton` are verified by
-  `monodis` but NOT tested at runtime. The button should appear in the Assembly environment
-  ribbon. If it does not, check: (1) registration in HKCU, (2) bitmap resource IDs (currently 0 =
-  no icon), (3) environment CatID matches the active document type.
-- **`EmbedInteropTypes=false`**: the `Interop.SolidEdge.dll` (community NuGet, 220.2.0 / SE 2022)
-  is distributed with the add-in. It is compatible with SE 2022-2026+ because the add-in interfaces
-  (`ISolidEdgeAddIn`, `ISEAddInEx`) are stable. If a future SE version adds required methods to
-  these interfaces, the add-in would need recompilation against a newer interop.
-
-## Project boundaries
-
-| Project | Role | COM? |
-|---|---|---|
-| `HardwareInserter.Core` | Models, FS-based hardware library (`FileSystemFastenerLibrary`), settings (`Settings`/`JsonSettingsStore`) | No |
-| `HardwareInserter.SolidEdge` | COM interop: geometry capture, insertion/constraints, `.par` file management | Yes |
-| `HardwareInserter.AddIn` | COM add-in (`ISolidEdgeAddIn`) + WPF `HardwarePickerWindow`. Registered in HKCU. | Yes |
-| `HardwareInserter.Core.Tests` | xUnit + FluentAssertions, Core only | No |
-
-### Catalog: filesystem scanning (no JSON/Excel)
-
-The catalog is built dynamically by `FileSystemFastenerLibrary` scanning a local folder recursively
-for `*.par` files. No JSON index, no Excel import. The folder root is configured by the user via
-the "Carpeta..." button and persisted in `%AppData%\HardwareInserter\settings.json` (only `RootPath`).
-A `FileSystemWatcher` keeps the tree live: adding a `.par` to the folder makes it appear without
-restarting Solid Edge. Each `.par` is shown as-is (no name parsing); `Category` = immediate
-subfolder name, `Filename` = file name with extension.
-
-## Conventions
-
-- Code comments and XML docs are written in Spanish; identifiers/types in English. Match this.
-- `GenerateDocumentationFile=true` and `NoWarn 1591` are set globally: public members should carry
-  XML docs, but missing docs will not fail the build.
-- Do not commit `bin/`, `obj/`, `.vs/`, or `*.user` (covered by `.gitignore`).
+No versionar `bin/`, `obj/`, `.vs/`, `*.user` ni secretos de firma.

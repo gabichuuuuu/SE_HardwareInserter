@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SE_HardwareInserter.SolidEdge</RootNamespace>
+    <AssemblyName>SE_HardwareInserter.SolidEdge</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SE_HardwareInserter.Core\SE_HardwareInserter.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    ═══════════════════════════════════════════════════════════════════════════
+    REFERENCIA COM A SOLID EDGE
+    ═══════════════════════════════════════════════════════════════════════════
+
+    Interop.SolidEdge (paquete NuGet de la comunidad Solid Edge) expone los
+    namespaces SolidEdgeFramework/SolidEdgeAssembly/SolidEdgePart/SolidEdgeGeometry.
+    EmbedInteropTypes=false mantiene la interop como DLL separada en la salida.
+    Este proyecto es una biblioteca del add-in COM; no inicia Solid Edge ni busca
+    una sesión global por su cuenta.
+    ═══════════════════════════════════════════════════════════════════════════
+  -->
+  <ItemGroup>
+    <PackageReference Include="Interop.SolidEdge">
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
